@@ -7,8 +7,10 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import madoku.craft.java.core.menu.MenuAPIManager;
@@ -31,8 +33,7 @@ public final class MadokuQuestsClient {
 	private static final String CONFIG_FILE_NAME = "madoku-quests";
 	private static final String SELECTED_QUEST = "selected-quest";
 	private static final String SELECTION_CONFIGURED = "selection-configured";
-	private static final String CATEGORY_ID = "category";
-	private static final String QUEST_INDEX = "index";
+	private static final String QUEST_ID = "id";
 	private static final List<CategoryDefinition> CATEGORY_DEFINITIONS = List.of(
 		new CategoryDefinition(QuestRegistry.CORE_CATEGORY, "menu.madoku-craft.quests.category.core", MadokuModuleIds.CORE, "core-quests.png"),
 		new CategoryDefinition(QuestRegistry.FARMING_CATEGORY, "menu.madoku-craft.quests.category.farming", MadokuModuleIds.FARMING, "farming-quests.png"),
@@ -81,9 +82,10 @@ public final class MadokuQuestsClient {
 			.toList();
 	}
 
-	static void selectQuest(String categoryId, int questIndex) {
-		if (!hasQuest(categoryId, questIndex)) return;
-		selectedQuest = new QuestSelection(categoryId, questIndex);
+	static void selectQuest(String questId) {
+		String normalizedQuestId = normalizeId(questId);
+		if (normalizedQuestId.isBlank() || questEntryById(normalizedQuestId) == null) return;
+		selectedQuest = new QuestSelection(normalizedQuestId);
 		selectionConfigured = true;
 		displayVersion++;
 		saveSelection();
@@ -96,10 +98,11 @@ public final class MadokuQuestsClient {
 		saveSelection();
 	}
 
-	static void turnInQuest(String categoryId, int questIndex) {
-		if (!questComplete(categoryId, questIndex)) return;
+	static void turnInQuest(String questId) {
+		QuestEntry entry = questEntryById(questId);
+		if (entry == null || !entry.complete() || entry.id().isBlank()) return;
 		if (ClientPlayNetworking.canSend(QuestsPayloadAPIManager.TurnInPayload.TYPE)) {
-			ClientPlayNetworking.send(new QuestsPayloadAPIManager.TurnInPayload(categoryId, questIndex));
+			ClientPlayNetworking.send(new QuestsPayloadAPIManager.TurnInPayload(entry.id()));
 		}
 	}
 
@@ -111,40 +114,45 @@ public final class MadokuQuestsClient {
 		return selectedQuest;
 	}
 
-	static boolean isQuestSelected(String categoryId, int questIndex) {
-		return selectedQuest != null
-			&& selectedQuest.categoryId().equals(categoryId)
-			&& selectedQuest.questIndex() == questIndex;
+	static boolean isQuestSelected(String questId) {
+		return selectedQuest != null && selectedQuest.questId().equals(normalizeId(questId));
 	}
 
 	static String selectedQuestDisplayText() {
-		QuestSelection selection = selectedQuest;
-		if (selection == null || !hasQuest(selection.categoryId(), selection.questIndex())) return null;
-		QuestEntry entry = questEntry(selection.categoryId(), selection.questIndex());
+		QuestEntry entry = selectedQuestEntry();
 		QuestDifficulty difficulty = entry == null ? null : QuestDifficulty.fromId(entry.difficulty());
 		if (entry == null || difficulty == null || entry.titleKey().isBlank()) return null;
 		MadokuModuleLifecycleManager lifecycle = MadokuModuleLifecycleManager.client();
 		for (CategoryDefinition definition : CATEGORY_DEFINITIONS) {
-			if (!definition.id().equals(selection.categoryId()) || !lifecycle.isRunning(definition.moduleId())) continue;
+			if (!definition.id().equals(entry.categoryId()) || !lifecycle.isRunning(definition.moduleId())) continue;
 			return Component.translatable(entry.titleKey(), difficulty.tierLabel()).getString();
 		}
 		return null;
 	}
 
 	static String selectedQuestProgressText() {
-		QuestSelection selection = selectedQuest;
-		if (selection == null) return null;
-		QuestEntry entry = questEntry(selection.categoryId(), selection.questIndex());
+		QuestEntry entry = selectedQuestEntry();
 		return entry == null ? null : entry.progress() + "/" + entry.required();
 	}
 
 	static String selectedQuestDescriptionText() {
-		QuestSelection selection = selectedQuest;
-		if (selection == null) return null;
-		QuestEntry entry = questEntry(selection.categoryId(), selection.questIndex());
+		QuestEntry entry = selectedQuestEntry();
 		return entry == null || entry.descriptionKey().isBlank()
 			? null
 			: Component.translatable(entry.descriptionKey(), entry.required()).getString();
+	}
+
+	static String selectedQuestCategoryId() {
+		QuestEntry entry = selectedQuestEntry();
+		return entry == null ? "" : entry.categoryId();
+	}
+
+	static long nextQuestWorldTime() {
+		return questSnapshot.nextQuestWorldTime();
+	}
+
+	static QuestEntry selectedQuestEntry() {
+		return selectedQuest == null ? null : questEntryById(selectedQuest.questId());
 	}
 
 	static int questCount(String categoryId) {
@@ -156,6 +164,11 @@ public final class MadokuQuestsClient {
 		if (categoryId == null || categoryId.isBlank() || questIndex < 0) return null;
 		List<QuestEntry> quests = questSnapshot.questsByCategory().get(categoryId);
 		return quests == null || questIndex >= quests.size() ? null : quests.get(questIndex);
+	}
+
+	private static QuestEntry questEntryById(String questId) {
+		String normalizedQuestId = normalizeId(questId);
+		return normalizedQuestId.isBlank() ? null : questSnapshot.questsById().get(normalizedQuestId);
 	}
 
 	static String questTitle(String categoryId, int questIndex) {
@@ -217,6 +230,7 @@ public final class MadokuQuestsClient {
 						if (quests.size() < 7) {
 							quests.add(new QuestEntry(
 								id,
+								category,
 								difficulty,
 								titleKey,
 								descriptionKey,
@@ -231,10 +245,12 @@ public final class MadokuQuestsClient {
 				LOGGER.warn("Failed to decode the synchronized Madoku Quests state.", exception);
 			}
 		}
-		questSnapshot = new QuestSnapshot(payload.day(), questsByCategory);
+		questSnapshot = new QuestSnapshot(payload.nextQuestWorldTime(), questsByCategory);
 		displayVersion++;
-		if (!selectionConfigured && hasQuest("core", 0)) {
-			selectedQuest = new QuestSelection("core", 0);
+		if (!selectionConfigured) {
+			QuestEntry firstMainQuest = questEntry("core", 0);
+			if (firstMainQuest == null) return;
+			selectedQuest = new QuestSelection(firstMainQuest.id());
 			selectionConfigured = true;
 			displayVersion++;
 			saveSelection();
@@ -253,16 +269,15 @@ public final class MadokuQuestsClient {
 			JsonObject defaults = buildDefaultsJson();
 			JsonObject rawData = JSONFormatAPIManager.readManagedDocument(file).data();
 			JsonObject rawSelection = readObject(rawData, SELECTED_QUEST);
-			boolean hasSelectionFields = rawSelection.has(CATEGORY_ID) && rawSelection.has(QUEST_INDEX);
+			boolean hasSelectionFields = rawSelection.has(QUEST_ID);
 			JsonObject normalized = JSONFormatAPIManager.ensureManagedFile(file, defaults);
 			boolean configured = readBoolean(normalized, SELECTION_CONFIGURED, false);
 			JsonObject selection = readObject(normalized, SELECTED_QUEST);
-			String categoryId = readString(selection, CATEGORY_ID, "");
-			int questIndex = readInt(selection, QUEST_INDEX, -1);
-			selectionConfigured = hasSelectionFields && (configured || !categoryId.isBlank());
-			selectedQuest = categoryId.isBlank() || questIndex < 0 || questIndex >= 7
+			String questId = normalizeId(readString(selection, QUEST_ID, ""));
+			selectionConfigured = hasSelectionFields && (configured || !questId.isBlank());
+			selectedQuest = questId.isBlank()
 				? null
-				: new QuestSelection(categoryId, questIndex);
+				: new QuestSelection(questId);
 			JSONFormatAPIManager.writeManagedFile(file, buildConfigJson(), defaults);
 		} catch (IOException | RuntimeException exception) {
 			selectedQuest = null;
@@ -285,19 +300,17 @@ public final class MadokuQuestsClient {
 		return JSONFormatAPIManager.object()
 			.put(SELECTION_CONFIGURED, false)
 			.object(SELECTED_QUEST, selection -> selection
-				.put(CATEGORY_ID, "")
-				.put(QUEST_INDEX, -1))
+				.put(QUEST_ID, ""))
 			.build();
 	}
 
 	private static JsonObject buildConfigJson() {
 		JSONFormatAPIManager.ObjectBuilder root = JSONFormatAPIManager.object();
 		root.put(SELECTION_CONFIGURED, selectionConfigured);
-		root.object(SELECTED_QUEST, selection -> {
-			if (selectedQuest == null) return;
-			selection.put(CATEGORY_ID, selectedQuest.categoryId());
-			selection.put(QUEST_INDEX, selectedQuest.questIndex());
-		});
+		root.object(SELECTED_QUEST, selection -> selection.put(
+			QUEST_ID,
+			selectedQuest == null ? "" : selectedQuest.questId()
+		));
 		return root.build();
 	}
 
@@ -330,6 +343,10 @@ public final class MadokuQuestsClient {
 		}
 	}
 
+	private static String normalizeId(String value) {
+		return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+	}
+
 	private static Identifier texture(String path) {
 		return Identifier.fromNamespaceAndPath("madoku-craft", "textures/" + path);
 	}
@@ -337,7 +354,7 @@ public final class MadokuQuestsClient {
 	public record QuestCategory(String id, String labelKey, Identifier iconTexture) {
 	}
 
-	record QuestSelection(String categoryId, int questIndex) {
+	record QuestSelection(String questId) {
 	}
 
 	private record CategoryDefinition(String id, String labelKey, Identifier moduleId, String iconName) {
@@ -345,6 +362,7 @@ public final class MadokuQuestsClient {
 
 	public record QuestEntry(
 		String id,
+		String categoryId,
 		String difficulty,
 		String titleKey,
 		String descriptionKey,
@@ -354,17 +372,31 @@ public final class MadokuQuestsClient {
 	) {
 	}
 
-	private record QuestSnapshot(long day, Map<String, List<QuestEntry>> questsByCategory) {
+	private record QuestSnapshot(
+		long nextQuestWorldTime,
+		Map<String, List<QuestEntry>> questsByCategory,
+		Map<String, QuestEntry> questsById
+	) {
+		private QuestSnapshot(long nextQuestWorldTime, Map<String, List<QuestEntry>> questsByCategory) {
+			this(nextQuestWorldTime, questsByCategory, Map.of());
+		}
+
 		private QuestSnapshot {
 			Map<String, List<QuestEntry>> copy = new LinkedHashMap<>();
+			Map<String, QuestEntry> index = new HashMap<>();
 			if (questsByCategory != null) {
-				questsByCategory.forEach((category, quests) -> copy.put(category, List.copyOf(quests)));
+				questsByCategory.forEach((category, quests) -> {
+					List<QuestEntry> immutableQuests = List.copyOf(quests);
+					copy.put(category, immutableQuests);
+					for (QuestEntry quest : immutableQuests) index.put(quest.id(), quest);
+				});
 			}
 			questsByCategory = Map.copyOf(copy);
+			questsById = Map.copyOf(index);
 		}
 
 		private static QuestSnapshot empty() {
-			return new QuestSnapshot(0L, Map.of());
+			return new QuestSnapshot(-1L, Map.of());
 		}
 	}
 }

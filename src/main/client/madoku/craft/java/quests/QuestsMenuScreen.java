@@ -101,7 +101,7 @@ public final class QuestsMenuScreen extends Screen {
 		MadokuQuestsClient.QuestSelection selection = MadokuQuestsClient.selectedQuest();
 		if (selection != null) {
 			for (int index = 0; index < categories.size(); index++) {
-				if (categories.get(index).id().equals(selection.categoryId())) {
+				if (categories.get(index).id().equals(MadokuQuestsClient.selectedQuestCategoryId())) {
 					selectedCategory = index;
 					break;
 				}
@@ -143,15 +143,17 @@ public final class QuestsMenuScreen extends Screen {
 				Bounds entry = questEntryBounds(panelX, panelY, index);
 				if (!entry.contains(event.x(), event.y())) continue;
 				String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
-				boolean alreadySelected = MadokuQuestsClient.isQuestSelected(categoryId, index);
+				MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
+				if (questEntry == null) return true;
+				boolean alreadySelected = MadokuQuestsClient.isQuestSelected(questEntry.id());
 				if (statusBounds(entry).contains(event.x(), event.y())) {
 					if (MadokuQuestsClient.questComplete(categoryId, index)) {
-						MadokuQuestsClient.turnInQuest(categoryId, index);
+						MadokuQuestsClient.turnInQuest(questEntry.id());
 						MenuSoundManager.playButtonClick();
 					}
 				} else {
 					if (alreadySelected) MadokuQuestsClient.deselectQuest();
-					else MadokuQuestsClient.selectQuest(categoryId, index);
+					else MadokuQuestsClient.selectQuest(questEntry.id());
 					MenuSoundManager.playButtonClick();
 				}
 				return true;
@@ -289,8 +291,9 @@ public final class QuestsMenuScreen extends Screen {
 		for (int index = 0; index < currentQuestCount(); index++) {
 			Bounds entry = questEntryBounds(panelX, panelY, index, currentScrollOffset);
 			if (entry.y() + entry.height() <= panelY + QUEST_VIEWPORT_Y || entry.y() >= panelY + QUEST_VIEWPORT_Y + QUEST_VIEWPORT_HEIGHT) continue;
-			boolean selected = selectedCategory < categories.size()
-				&& MadokuQuestsClient.isQuestSelected(categories.get(selectedCategory).id(), index);
+			String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
+			MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
+			boolean selected = questEntry != null && MadokuQuestsClient.isQuestSelected(questEntry.id());
 			guiGraphics.blit(
 				RenderPipelines.GUI_TEXTURED,
 				selected ? QUEST_ENTRY_SELECTED_TEXTURE : QUEST_ENTRY_TEXTURE,
@@ -307,10 +310,8 @@ public final class QuestsMenuScreen extends Screen {
 				selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "",
 				index
 			);
-			String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
 			String questDescription = MadokuQuestsClient.questDescription(categoryId, index);
 			String questProgress = MadokuQuestsClient.questProgress(categoryId, index);
-			MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
 			float descriptionScale = fittedTextScale(questDescription, QUEST_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
 			int descriptionY = entry.y() + QUEST_DESCRIPTION_Y;
 			drawFittedLeftText(
@@ -478,7 +479,9 @@ public final class QuestsMenuScreen extends Screen {
 	private String formatQuestTimer() {
 		Minecraft minecraft = Minecraft.getInstance();
 		if (minecraft.level == null) return "--:--:--";
-		long remainingTicks = 24_000L - Math.floorMod(minecraft.level.getOverworldClockTime(), 24_000L);
+		long nextQuestWorldTime = MadokuQuestsClient.nextQuestWorldTime();
+		if (nextQuestWorldTime < 0L) return "--:--:--";
+		long remainingTicks = Math.max(0L, nextQuestWorldTime - minecraft.level.getOverworldClockTime());
 		long remainingSeconds = Math.max(0L, (remainingTicks + 19L) / 20L);
 		long hours = remainingSeconds / 3_600L;
 		long minutes = (remainingSeconds % 3_600L) / 60L;

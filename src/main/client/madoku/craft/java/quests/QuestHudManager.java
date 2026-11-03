@@ -12,7 +12,7 @@ import net.minecraft.resources.Identifier;
 
 /** Renders the globally selected quest during gameplay and participates in the Alt-held layout editor. */
 final class QuestHudManager {
-	private static final Identifier QUEST_HUD_LAYOUT_ID = Identifier.fromNamespaceAndPath("madoku-craft", "selected_quest_hud");
+	private static final Identifier QUEST_HUD_LAYOUT_ID = Identifier.fromNamespaceAndPath("madoku-craft", "selected-quest-hud");
 	private static final Identifier QUEST_HUD_TEXTURE = texture("madoku-menu/quests-menu/selected-quest-hud.png");
 	private static final int HUD_WIDTH = 78;
 	private static final int HUD_HEIGHT = 40;
@@ -32,9 +32,6 @@ final class QuestHudManager {
 	private static final int TEXT_GAP = 2;
 	private static final float TEXT_SCALE = 0.7F;
 	private static final int TEXT_COLOR = 0xFFFFFFFF;
-	private static int defaultX;
-	private static int defaultY;
-	private static boolean defaultPositionInitialized;
 	private static int cachedDisplayVersion = Integer.MIN_VALUE;
 	private static String cachedQuestTitle;
 	private static String cachedDescription;
@@ -42,8 +39,18 @@ final class QuestHudManager {
 	private static boolean initialized;
 	private static final UiLayoutElement QUEST_HUD_LAYOUT = new UiLayoutElement() {
 		@Override public Identifier id() { return QUEST_HUD_LAYOUT_ID; }
-		@Override public int defaultX() { return defaultX; }
-		@Override public int defaultY() { return defaultY; }
+		@Override public int defaultX() { return 0; }
+		@Override public int defaultY() { return 0; }
+		@Override public int defaultX(Minecraft client) {
+			return client == null || client.getWindow() == null
+				? 0
+				: Math.max(0, client.getWindow().getGuiScaledWidth() - HUD_WIDTH - DEFAULT_RIGHT_INSET);
+		}
+		@Override public int defaultY(Minecraft client) {
+			return client == null || client.getWindow() == null
+				? 0
+				: Math.max(0, client.getWindow().getGuiScaledHeight() / DEFAULT_VERTICAL_DIVISOR);
+		}
 		@Override public Bounds bounds(Minecraft client, int x, int y) { return new Bounds(x, y, HUD_WIDTH, HUD_HEIGHT); }
 		@Override public boolean isEnabled(Minecraft client) { return hasRenderablePlayer(client, true); }
 		@Override public boolean isVisible(Minecraft client) { return selectedQuestTitle() != null; }
@@ -61,7 +68,7 @@ final class QuestHudManager {
 		UiLayoutAPIManager.registerElement(QUEST_HUD_LAYOUT);
 		HudElementRegistry.attachElementAfter(
 			VanillaHudElements.MISC_OVERLAYS,
-			Identifier.fromNamespaceAndPath("madoku-craft", "selected_quest_hud"),
+			Identifier.fromNamespaceAndPath("madoku-craft", "selected-quest-hud"),
 			QuestHudManager::renderQuestHud
 		);
 		initialized = true;
@@ -70,14 +77,12 @@ final class QuestHudManager {
 	private static void renderQuestHud(GuiGraphicsExtractor context, DeltaTracker tickCounter) {
 		Minecraft client = Minecraft.getInstance();
 		if (UiLayoutAPIManager.isEditMode()) return;
-		initializeDefaultPosition(client, context.guiWidth(), context.guiHeight());
 		UiLayoutAPIManager.Position position = UiLayoutAPIManager.position(QUEST_HUD_LAYOUT);
 		renderQuestHud(context, client, position.x(), position.y(), false);
 	}
 
 	private static void renderQuestHud(GuiGraphicsExtractor context, Minecraft client, int x, int y, boolean editing) {
 		if (!hasRenderablePlayer(client, editing)) return;
-		initializeDefaultPosition(client, context.guiWidth(), context.guiHeight());
 		String questTitle = selectedQuestTitle();
 		if (questTitle == null) return;
 
@@ -127,16 +132,12 @@ final class QuestHudManager {
 	}
 
 	private static int selectedQuestProgress() {
-		MadokuQuestsClient.QuestSelection selection = MadokuQuestsClient.selectedQuest();
-		if (selection == null) return 0;
-		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.questEntry(selection.categoryId(), selection.questIndex());
+		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.selectedQuestEntry();
 		return entry == null ? 0 : entry.progress();
 	}
 
 	private static int selectedQuestRequired() {
-		MadokuQuestsClient.QuestSelection selection = MadokuQuestsClient.selectedQuest();
-		if (selection == null) return 0;
-		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.questEntry(selection.categoryId(), selection.questIndex());
+		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.selectedQuestEntry();
 		return entry == null ? 0 : entry.required();
 	}
 
@@ -151,14 +152,6 @@ final class QuestHudManager {
 		context.pose().scale(scale, scale);
 		context.text(client.font, text, Math.round(x / scale), Math.round(y / scale), TEXT_COLOR, true);
 		context.pose().popMatrix();
-	}
-
-	private static void initializeDefaultPosition(Minecraft client, int guiWidth, int guiHeight) {
-		if (defaultPositionInitialized || client == null || client.getWindow() == null || guiWidth <= 0 || guiHeight <= 0) return;
-		defaultX = Math.max(0, guiWidth - HUD_WIDTH - DEFAULT_RIGHT_INSET);
-		defaultY = Math.max(0, guiHeight / DEFAULT_VERTICAL_DIVISOR);
-		UiLayoutAPIManager.initializePositionIfUnset(QUEST_HUD_LAYOUT_ID, client, defaultX, defaultY);
-		defaultPositionInitialized = true;
 	}
 
 	private static int scaledTextHeight(Minecraft client, float scale) {

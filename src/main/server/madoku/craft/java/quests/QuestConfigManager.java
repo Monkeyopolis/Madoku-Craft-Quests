@@ -218,7 +218,7 @@ final class QuestConfigManager {
 
 	private static QuestDefinition parse(String fileKey, String categoryId, JsonObject sourceRoot) {
 		JsonObject quest = objectField(sourceRoot, QUEST_GROUP);
-		String id = normalizeId(readString(quest, ID, fileKey));
+		String id = normalizeId(readString(quest, ID, ""));
 		String titleKey = readString(quest, TITLE_KEY, "");
 		String descriptionKey = readString(quest, DESCRIPTION_KEY, "");
 		String configuredCategory = normalizeId(readString(quest, CATEGORY, categoryId));

@@ -8,7 +8,11 @@ import madoku.craft.java.core.data.DataSaveParticipantAPIManager;
 import madoku.craft.java.core.data.PlayerDataAPIManager;
 import madoku.craft.java.core.module.MadokuModuleIds;
 import madoku.craft.java.core.module.MadokuModuleLifecycleManager;
+import madoku.craft.java.core.essence.EssenceManager;
+import madoku.craft.java.core.loot.LootTableAPIManager;
+import madoku.craft.java.core.quest.QuestRewardAPIManager;
 import madoku.craft.java.core.sync.SyncPlayerAPIManager;
+import madoku.craft.java.core.time.TimeAPIManager;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -18,8 +22,11 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.TagKey;
-import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.util.Prediction;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -27,10 +34,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -39,7 +49,7 @@ import java.util.UUID;
 final class QuestsStateManager {
 	private static final Logger LOGGER = LoggerFactory.getLogger(QuestsStateManager.class);
 	private static final String SYSTEM_ID = "quests";
-	private static final String LAST_ASSIGNED_DAY = "last-assigned-day";
+	private static final String LAST_ASSIGNED_WORLD_TIME = "last-assigned-world-time";
 	private static final String QUESTS = "quests";
 	private static final String ID = "id";
 	private static final String CATEGORY = "category";
@@ -48,7 +58,8 @@ final class QuestsStateManager {
 	private static final String DESCRIPTION_KEY = "description-key";
 	private static final String PROGRESS = "progress";
 	private static final int MAX_QUESTS_PER_CATEGORY = 7;
-	private static final long MINECRAFT_TICKS_PER_DAY = 24_000L;
+	private static final long QUEST_INTERVAL_WORLD_TICKS = TimeAPIManager.MINECRAFT_TICKS_PER_CYCLE;
+	private static final long PROGRESS_SYNC_INTERVAL_TICKS = 5L;
 	private static final List<CategoryDefinition> CATEGORY_DEFINITIONS = List.of(
 		new CategoryDefinition(QuestRegistry.CORE_CATEGORY, MadokuModuleIds.CORE),
 		new CategoryDefinition(QuestRegistry.FARMING_CATEGORY, MadokuModuleIds.FARMING),
@@ -56,10 +67,14 @@ final class QuestsStateManager {
 		new CategoryDefinition(QuestRegistry.PETS_CATEGORY, MadokuModuleIds.PETS)
 	);
 	private static final Map<UUID, PlayerQuestState> STATES_BY_PLAYER = new HashMap<>();
-	private static final Map<UUID, Map<Item, Integer>> INVENTORY_SNAPSHOTS = new HashMap<>();
 	private static final Set<UUID> DIRTY_SYNCS = new HashSet<>();
 	private static final Set<UUID> DIRTY_PERSISTENCE = new HashSet<>();
-	private static long lastProcessedDay = Long.MIN_VALUE;
+	private static final PriorityQueue<QuestScheduleEntry> ASSIGNMENT_SCHEDULE = new PriorityQueue<>(
+		Comparator.comparingLong(QuestScheduleEntry::dueWorldTime)
+	);
+	private static final Map<UUID, QuestScheduleEntry> SCHEDULE_BY_PLAYER = new HashMap<>();
+	private static final Map<UUID, Long> NEXT_PROGRESS_SYNC_TICKS = new HashMap<>();
+	private static long lastObservedWorldTime = Long.MIN_VALUE;
 	private static boolean initialized;
 	private static final DataSaveParticipant DATA_SAVE_PARTICIPANT = new DataSaveParticipant() {
 		@Override public String id() { return "quests.players"; }
@@ -84,7 +99,7 @@ final class QuestsStateManager {
 		DataSaveParticipantAPIManager.register(DATA_SAVE_PARTICIPANT);
 		ServerPlayNetworking.registerGlobalReceiver(
 			QuestsPayloadAPIManager.TurnInPayload.TYPE,
-			(payload, context) -> handleTurnIn(context.player(), payload.categoryId(), payload.questIndex())
+			(payload, context) -> handleTurnIn(context.player(), payload.questId())
 		);
 		PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
 			if (player instanceof ServerPlayer serverPlayer) onBlockBroken(serverPlayer, state);
@@ -96,8 +111,9 @@ final class QuestsStateManager {
 				PlayerQuestState state = STATES_BY_PLAYER.get(playerId);
 				if (state != null && DIRTY_PERSISTENCE.remove(playerId)) persistState(handler.player, state);
 				STATES_BY_PLAYER.remove(playerId);
-				INVENTORY_SNAPSHOTS.remove(playerId);
 				DIRTY_SYNCS.remove(playerId);
+				removeScheduledAssignment(playerId);
+				NEXT_PROGRESS_SYNC_TICKS.remove(playerId);
 			}
 		});
 		initialized = true;
@@ -105,10 +121,12 @@ final class QuestsStateManager {
 
 	static void reset() {
 		STATES_BY_PLAYER.clear();
-		INVENTORY_SNAPSHOTS.clear();
 		DIRTY_SYNCS.clear();
 		DIRTY_PERSISTENCE.clear();
-		lastProcessedDay = Long.MIN_VALUE;
+		ASSIGNMENT_SCHEDULE.clear();
+		SCHEDULE_BY_PLAYER.clear();
+		NEXT_PROGRESS_SYNC_TICKS.clear();
+		lastObservedWorldTime = Long.MIN_VALUE;
 		lastAutosaveBucket = Long.MIN_VALUE;
 	}
 
@@ -133,10 +151,12 @@ final class QuestsStateManager {
 
 	static void onServerStarted(MinecraftServer server) {
 		STATES_BY_PLAYER.clear();
-		INVENTORY_SNAPSHOTS.clear();
 		DIRTY_SYNCS.clear();
 		DIRTY_PERSISTENCE.clear();
-		lastProcessedDay = server == null || server.overworld() == null ? Long.MIN_VALUE : currentDay(server);
+		ASSIGNMENT_SCHEDULE.clear();
+		SCHEDULE_BY_PLAYER.clear();
+		NEXT_PROGRESS_SYNC_TICKS.clear();
+		lastObservedWorldTime = server == null || server.overworld() == null ? Long.MIN_VALUE : currentWorldTime(server);
 		lastAutosaveBucket = server == null || server.overworld() == null ? Long.MIN_VALUE : autosaveBucket(server);
 		if (server == null) return;
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -146,79 +166,57 @@ final class QuestsStateManager {
 
 	static void onServerTick(MinecraftServer server) {
 		if (server == null || server.overworld() == null) return;
-		long currentDay = currentDay(server);
-		if (currentDay != lastProcessedDay) {
-			lastProcessedDay = currentDay;
-			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-				PlayerQuestState state = stateFor(player);
-				if (updateForCurrentDay(player, state, currentDay, server) || state.needsInitialSync()) {
-					persistState(player, state);
-					DIRTY_PERSISTENCE.remove(player.getUUID());
-					state.markSynchronized();
-					send(player, state, currentDay);
-					DIRTY_SYNCS.remove(player.getUUID());
-				}
-			}
+		long currentWorldTime = currentWorldTime(server);
+		boolean worldTimeRolledBack = lastObservedWorldTime != Long.MIN_VALUE && currentWorldTime < lastObservedWorldTime;
+		lastObservedWorldTime = currentWorldTime;
+		if (worldTimeRolledBack) {
+			rebaseForWorldTimeRollback(server, currentWorldTime);
 		}
-		flushDirtySyncs(server, currentDay);
+		processDueAssignments(server, currentWorldTime);
+		flushDirtySyncs(server);
 	}
 
 	static void onServerStopped(MinecraftServer server) {
 		flushDirtyPlayerStates(server);
 		STATES_BY_PLAYER.clear();
-		INVENTORY_SNAPSHOTS.clear();
 		DIRTY_SYNCS.clear();
 		DIRTY_PERSISTENCE.clear();
-		lastProcessedDay = Long.MIN_VALUE;
+		ASSIGNMENT_SCHEDULE.clear();
+		SCHEDULE_BY_PLAYER.clear();
+		NEXT_PROGRESS_SYNC_TICKS.clear();
+		lastObservedWorldTime = Long.MIN_VALUE;
 		lastAutosaveBucket = Long.MIN_VALUE;
 	}
 
-	static void onInventoryChanged(ServerPlayer player) {
+	static void onItemCollected(ServerPlayer player, Item item, int amount) {
 		if (player == null) {
-			LOGGER.info("[Quests] Inventory change hook received without a player.");
+			LOGGER.info("[Quests] Item collection hook received without a player.");
 			return;
 		}
-		UUID playerId = player.getUUID();
-		Map<Item, Integer> current = snapshotInventory(player);
-		Map<Item, Integer> previous = INVENTORY_SNAPSHOTS.put(playerId, current);
+		if (item == null || amount <= 0) {
+			LOGGER.info(
+				"[Quests] Item collection hook received invalid data player={} item={} amount={}",
+				player.getGameProfile().name(),
+				item,
+				amount
+			);
+			return;
+		}
 		LOGGER.info(
-			"[Quests] Inventory change received player={} currentItems={} previousItems={}",
+			"[Quests] Item collected player={} item={} amount={}",
 			player.getGameProfile().name(),
-			current.size(),
-			previous == null ? "none" : previous.size()
+			BuiltInRegistries.ITEM.getKey(item),
+			amount
 		);
-		if (previous == null) {
-			LOGGER.info("[Quests] Inventory change ignored because no baseline snapshot exists for player={}.", player.getGameProfile().name());
-			return;
-		}
-
 		PlayerQuestState state = stateFor(player);
-		boolean changed = false;
-		boolean positiveDelta = false;
-		for (Map.Entry<Item, Integer> entry : current.entrySet()) {
-			int previousCount = previous.getOrDefault(entry.getKey(), 0);
-			int collected = entry.getValue() - previousCount;
-			if (collected <= 0) continue;
-			positiveDelta = true;
-			LOGGER.info(
-				"[Quests] Inventory positive delta player={} item={} previous={} current={} collected={}",
-				player.getGameProfile().name(),
-				BuiltInRegistries.ITEM.getKey(entry.getKey()),
-				previousCount,
-				entry.getValue(),
-				collected
-			);
-			boolean objectiveChanged = state.addCollected(entry.getKey(), collected);
-			changed |= objectiveChanged;
-			LOGGER.info(
-				"[Quests] Inventory objective result player={} item={} changed={} state={}",
-				player.getGameProfile().name(),
-				BuiltInRegistries.ITEM.getKey(entry.getKey()),
-				objectiveChanged,
-				describeState(state)
-			);
-		}
-		if (!positiveDelta) LOGGER.info("[Quests] Inventory change had no positive item delta for player={}.", player.getGameProfile().name());
+		boolean changed = state.addCollected(item, amount);
+		LOGGER.info(
+			"[Quests] Item collection objective result player={} item={} changed={} state={}",
+			player.getGameProfile().name(),
+			BuiltInRegistries.ITEM.getKey(item),
+			changed,
+			describeState(state)
+		);
 		if (changed) markProgressChanged(player);
 	}
 
@@ -249,92 +247,158 @@ final class QuestsStateManager {
 		if (changed) markProgressChanged(player);
 	}
 
-	private static void handleTurnIn(ServerPlayer player, String categoryId, int categoryIndex) {
-		if (player == null || categoryId == null || categoryIndex < 0) return;
+	private static void handleTurnIn(ServerPlayer player, String questId) {
+		String normalizedQuestId = questId == null ? "" : questId.trim().toLowerCase(Locale.ROOT);
+		if (player == null || normalizedQuestId.isBlank()) return;
 		PlayerQuestState state = stateFor(player);
-		int matchingIndex = 0;
-		for (int index = 0; index < state.quests().size(); index++) {
-			QuestRecord quest = state.quests().get(index);
-			QuestDefinition definition = quest.definition();
-			if (definition == null || !categoryId.equals(definition.categoryId())) continue;
-			if (matchingIndex++ != categoryIndex) continue;
-			if (!quest.isComplete()) return;
-			state.quests().remove(index);
-			markProgressChanged(player);
-			return;
+		QuestRecord quest = state.quest(normalizedQuestId);
+		if (quest == null || !quest.isComplete()) return;
+		awardRewards(player, quest.difficulty());
+		player.level().playSound(
+			null,
+			player.getX(),
+			player.getY(),
+			player.getZ(),
+			SoundEvents.PLAYER_LEVELUP,
+			SoundSource.PLAYERS,
+			1.0F,
+			1.0F
+		);
+		state.removeQuest(quest.definitionId());
+		markProgressChanged(player);
+		sendImmediately(player, state);
+	}
+
+	private static void awardRewards(ServerPlayer player, QuestDifficulty difficulty) {
+		if (player == null || difficulty == null) return;
+		player.giveExperiencePoints(difficulty.experienceReward());
+		QuestRewardAPIManager.addMadokuLevelsXp(player, difficulty.levelsXpReward());
+		int essence = difficulty.essenceReward();
+		if (essence > 0) {
+			giveItemOrDrop(player, new ItemStack(EssenceManager.ESSENCE, essence));
+		}
+
+		List<ItemStack> itemRewards = LootTableAPIManager.generateManagedLootForTable(
+			"quest-" + difficulty.id() + "-difficulty",
+			RandomSource.create()
+		);
+		for (ItemStack reward : itemRewards) {
+			if (reward != null && !reward.isEmpty()) {
+				giveItemOrDrop(player, reward);
+			}
+		}
+	}
+
+	private static void giveItemOrDrop(ServerPlayer player, ItemStack reward) {
+		if (player == null || reward == null || reward.isEmpty()) return;
+		ItemStack remaining = reward.copy();
+		if (!player.getInventory().add(remaining) && !remaining.isEmpty()) {
+			player.drop(remaining, false, Prediction.SERVER_ONLY);
 		}
 	}
 
 	private static void prepareAndSync(ServerPlayer player, MinecraftServer server) {
 		if (player == null || server == null || server.overworld() == null) return;
-		long currentDay = currentDay(server);
+		long currentWorldTime = currentWorldTime(server);
 		PlayerQuestState state = stateFor(player);
-		if (updateForCurrentDay(player, state, currentDay, server)) {
+		if (updateForCurrentWorldTime(player, state, currentWorldTime, server)) {
 			persistState(player, state);
 			DIRTY_PERSISTENCE.remove(player.getUUID());
 		}
-		INVENTORY_SNAPSHOTS.put(player.getUUID(), snapshotInventory(player));
 		state.markSynchronized();
 		DIRTY_SYNCS.remove(player.getUUID());
-		send(player, state, currentDay);
+		scheduleNextAssignment(player, state);
+		send(player, state);
 	}
 
 	private static PlayerQuestState stateFor(ServerPlayer player) {
 		return STATES_BY_PLAYER.computeIfAbsent(player.getUUID(), ignored -> loadState(player));
 	}
 
-	private static void flushDirtySyncs(MinecraftServer server, long currentDay) {
+	private static void flushDirtySyncs(MinecraftServer server) {
 		if (DIRTY_SYNCS.isEmpty()) return;
+		long currentGameTime = server.overworld().getGameTime();
 		for (UUID playerId : List.copyOf(DIRTY_SYNCS)) {
 			ServerPlayer player = server.getPlayerList().getPlayer(playerId);
 			if (player == null) {
 				DIRTY_SYNCS.remove(playerId);
 				continue;
 			}
+			long nextSyncTick = NEXT_PROGRESS_SYNC_TICKS.getOrDefault(playerId, Long.MIN_VALUE);
+			if (currentGameTime < nextSyncTick) continue;
 			PlayerQuestState state = STATES_BY_PLAYER.get(playerId);
-			if (state != null) send(player, state, currentDay);
+			if (state != null) {
+				send(player, state);
+				NEXT_PROGRESS_SYNC_TICKS.put(playerId, currentGameTime + PROGRESS_SYNC_INTERVAL_TICKS);
+			}
 			DIRTY_SYNCS.remove(playerId);
 		}
 	}
 
-	private static boolean updateForCurrentDay(
-		ServerPlayer player,
-		PlayerQuestState state,
-		long currentDay,
-		MinecraftServer server
-	) {
-		boolean firstQuestChanged = ensureFirstQuestIsMain(state);
-		if (state.lastAssignedDay() == Long.MIN_VALUE) {
-			if (state.quests().isEmpty()) awardInitialMainQuest(player, state);
-			state.lastAssignedDay(currentDay);
-			return true;
+	private static void rebaseForWorldTimeRollback(MinecraftServer server, long currentWorldTime) {
+		ASSIGNMENT_SCHEDULE.clear();
+		SCHEDULE_BY_PLAYER.clear();
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			PlayerQuestState state = stateFor(player);
+			if (updateForCurrentWorldTime(player, state, currentWorldTime, server)) {
+				persistState(player, state);
+				DIRTY_PERSISTENCE.remove(player.getUUID());
+				state.markSynchronized();
+				send(player, state);
+				DIRTY_SYNCS.remove(player.getUUID());
+			}
+			scheduleNextAssignment(player, state);
 		}
-		if (currentDay <= state.lastAssignedDay()) return firstQuestChanged;
-
-		long firstMissedDay = state.lastAssignedDay() + 1L;
-		for (long day = firstMissedDay; day <= currentDay; day++) {
-			awardQuest(state, day, server, player);
-			if (isFull(state)) break;
-		}
-		state.lastAssignedDay(currentDay);
-		return true;
 	}
 
-	private static boolean ensureFirstQuestIsMain(PlayerQuestState state) {
-		if (state.quests().isEmpty()) return false;
-		CategoryDefinition core = CATEGORY_DEFINITIONS.get(0);
-		QuestRecord firstQuest = state.quests().get(0);
-		QuestDefinition definition = firstQuest.definition();
-		if (!MadokuModuleLifecycleManager.server().isRunning(core.moduleId())
-			|| (definition != null
-				&& core.id().equals(definition.categoryId())
-				&& firstQuest.difficulty() == QuestDifficulty.EASY)) {
-			return false;
+	private static void processDueAssignments(MinecraftServer server, long currentWorldTime) {
+		while (!ASSIGNMENT_SCHEDULE.isEmpty()
+			&& ASSIGNMENT_SCHEDULE.peek().dueWorldTime() <= currentWorldTime) {
+			QuestScheduleEntry schedule = ASSIGNMENT_SCHEDULE.poll();
+			if (!schedule.equals(SCHEDULE_BY_PLAYER.get(schedule.playerId()))) continue;
+			SCHEDULE_BY_PLAYER.remove(schedule.playerId());
+			ServerPlayer player = server.getPlayerList().getPlayer(schedule.playerId());
+			if (player == null) continue;
+			PlayerQuestState state = STATES_BY_PLAYER.get(schedule.playerId());
+			if (state == null || state.lastAssignedWorldTime() == Long.MIN_VALUE) continue;
+			if (schedule.cursorWorldTime() != state.lastAssignedWorldTime()
+				|| schedule.dueWorldTime() != nextAssignmentWorldTime(state.lastAssignedWorldTime())) {
+				continue;
+			}
+			if (updateForCurrentWorldTime(player, state, currentWorldTime, server)) {
+				persistState(player, state);
+				DIRTY_PERSISTENCE.remove(player.getUUID());
+				state.markSynchronized();
+				send(player, state);
+				DIRTY_SYNCS.remove(player.getUUID());
+			}
+			scheduleNextAssignment(player, state);
 		}
-		QuestDefinition firstMainQuest = QuestRegistry.firstMainQuest();
-		if (firstMainQuest == null) return false;
-		state.quests().removeIf(quest -> firstMainQuest.id().equals(quest.definitionId()));
-		state.quests().add(0, QuestRecord.create(firstMainQuest, QuestDifficulty.EASY));
+	}
+
+	private static boolean updateForCurrentWorldTime(
+		ServerPlayer player,
+		PlayerQuestState state,
+		long currentWorldTime,
+		MinecraftServer server
+	) {
+		if (state.lastAssignedWorldTime() == Long.MIN_VALUE) {
+			if (state.quests().isEmpty()) awardInitialMainQuest(player, state);
+			state.lastAssignedWorldTime(currentWorldTime);
+			return true;
+		}
+		if (currentWorldTime < state.lastAssignedWorldTime()) {
+			state.lastAssignedWorldTime(currentWorldTime);
+			return true;
+		}
+		long elapsedWorldTime = currentWorldTime - state.lastAssignedWorldTime();
+		long completedWorldDays = elapsedWorldTime / QUEST_INTERVAL_WORLD_TICKS;
+		if (completedWorldDays <= 0L) return false;
+		for (long day = 1L; day <= completedWorldDays && !isFull(state); day++) {
+			long assignmentWorldTime = state.lastAssignedWorldTime() + day * QUEST_INTERVAL_WORLD_TICKS;
+			if (!awardQuest(state, assignmentWorldTime, server, player)) break;
+		}
+		state.lastAssignedWorldTime(currentWorldTime - elapsedWorldTime % QUEST_INTERVAL_WORLD_TICKS);
 		return true;
 	}
 
@@ -347,27 +411,27 @@ final class QuestsStateManager {
 			return false;
 		}
 		if (state.containsDefinition(firstMainQuest.id())) return false;
-		state.quests().add(QuestRecord.create(firstMainQuest, QuestDifficulty.EASY));
+		state.addQuest(QuestRecord.create(firstMainQuest, QuestDifficulty.EASY));
 		return true;
 	}
 
-	private static boolean awardQuest(PlayerQuestState state, long day, MinecraftServer server, ServerPlayer player) {
+	private static boolean awardQuest(PlayerQuestState state, long assignmentWorldTime, MinecraftServer server, ServerPlayer player) {
 		Set<String> assignedQuestIds = state.definitionIds();
 		List<CategoryDefinition> available = activeCategoriesWithRoom(state, assignedQuestIds);
 		if (available.isEmpty()) return false;
-		Random random = new Random(questSeed(player, day, server, 0L));
+		Random random = new Random(questSeed(player, assignmentWorldTime, server, 0L));
 		CategoryDefinition category = available.get(random.nextInt(available.size()));
 		QuestAssignment assignment = QuestRegistry.choose(random, category.id(), assignedQuestIds);
 		if (assignment == null) return false;
-		state.quests().add(QuestRecord.create(assignment.definition(), assignment.difficulty()));
+		state.addQuest(QuestRecord.create(assignment.definition(), assignment.difficulty()));
 		return true;
 	}
 
-	private static long questSeed(ServerPlayer player, long day, MinecraftServer server, long salt) {
+	private static long questSeed(ServerPlayer player, long assignmentWorldTime, MinecraftServer server, long salt) {
 		return player.getUUID().getMostSignificantBits()
 			^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 17)
 			^ Long.rotateLeft(server.overworld().getSeed(), 29)
-			^ day * 0x9E3779B97F4A7C15L
+			^ assignmentWorldTime * 0x9E3779B97F4A7C15L
 			^ salt;
 	}
 
@@ -407,14 +471,14 @@ final class QuestsStateManager {
 	}
 
 	private static PlayerQuestState loadState(ServerPlayer player) {
-		long lastAssignedDay = Long.MIN_VALUE;
+		long lastAssignedWorldTime = Long.MIN_VALUE;
 		List<QuestRecord> quests = new ArrayList<>();
 		try {
 			JsonObject aggregate = PlayerDataAPIManager.getSystemDataForPlayer(player, SYSTEM_ID, "players", "uuid");
 			JsonArray entries = aggregate.getAsJsonArray("players");
 			if (entries != null && !entries.isEmpty() && entries.get(0).isJsonObject()) {
 				JsonObject data = entries.get(0).getAsJsonObject();
-				lastAssignedDay = readLong(data, LAST_ASSIGNED_DAY, Long.MIN_VALUE);
+				lastAssignedWorldTime = readLong(data, LAST_ASSIGNED_WORLD_TIME, Long.MIN_VALUE);
 				JsonElement questElement = data.get(QUESTS);
 				if (questElement != null && questElement.isJsonArray()) {
 					for (JsonElement element : questElement.getAsJsonArray()) {
@@ -430,7 +494,7 @@ final class QuestsStateManager {
 		} catch (RuntimeException exception) {
 			LOGGER.warn("Failed to load the persisted quest state for {}.", player.getUUID(), exception);
 		}
-		return new PlayerQuestState(lastAssignedDay, quests);
+		return new PlayerQuestState(lastAssignedWorldTime, quests);
 	}
 
 	private static QuestRecord readQuest(JsonObject source) {
@@ -466,7 +530,7 @@ final class QuestsStateManager {
 
 	private static void persistState(ServerPlayer player, PlayerQuestState state) {
 		JsonObject data = new JsonObject();
-		data.addProperty(LAST_ASSIGNED_DAY, state.lastAssignedDay());
+		data.addProperty(LAST_ASSIGNED_WORLD_TIME, state.lastAssignedWorldTime());
 		JsonArray quests = new JsonArray();
 		for (QuestRecord quest : state.quests()) {
 			QuestDefinition definition = quest.definition();
@@ -504,8 +568,19 @@ final class QuestsStateManager {
 		return Math.floorDiv(server.overworld().getGameTime(), interval);
 	}
 
-	private static void send(ServerPlayer player, PlayerQuestState state, long currentDay) {
-		SyncPlayerAPIManager.send(player, new QuestsPayloadAPIManager(currentDay, encodeQuests(state.quests())));
+	private static void send(ServerPlayer player, PlayerQuestState state) {
+		SyncPlayerAPIManager.send(
+			player,
+			new QuestsPayloadAPIManager(nextAssignmentWorldTime(state.lastAssignedWorldTime()), encodeQuests(state.quests()))
+		);
+	}
+
+	private static void sendImmediately(ServerPlayer player, PlayerQuestState state) {
+		if (player == null || state == null) return;
+		send(player, state);
+		UUID playerId = player.getUUID();
+		DIRTY_SYNCS.remove(playerId);
+		NEXT_PROGRESS_SYNC_TICKS.put(playerId, player.level().getGameTime() + PROGRESS_SYNC_INTERVAL_TICKS);
 	}
 
 	private static String encodeQuests(List<QuestRecord> quests) {
@@ -525,18 +600,6 @@ final class QuestsStateManager {
 			encoded.add(entry);
 		}
 		return encoded.toString();
-	}
-
-	private static Map<Item, Integer> snapshotInventory(ServerPlayer player) {
-		Map<Item, Integer> snapshot = new HashMap<>();
-		Inventory inventory = player.getInventory();
-		int inventorySlotCount = Math.min(36, inventory.getContainerSize());
-		for (int slot = 0; slot < inventorySlotCount; slot++) {
-			ItemStack stack = inventory.getItem(slot);
-			if (stack == null || stack.isEmpty()) continue;
-			snapshot.merge(stack.getItem(), stack.getCount(), Integer::sum);
-		}
-		return snapshot;
 	}
 
 	private static String describeState(PlayerQuestState state) {
@@ -564,8 +627,36 @@ final class QuestsStateManager {
 		return identifier.equals(BuiltInRegistries.ITEM.getKey(item));
 	}
 
-	private static long currentDay(MinecraftServer server) {
-		return Math.floorDiv(server.overworld().getOverworldClockTime(), MINECRAFT_TICKS_PER_DAY);
+	private static void scheduleNextAssignment(ServerPlayer player, PlayerQuestState state) {
+		if (player == null || state == null || state.lastAssignedWorldTime() == Long.MIN_VALUE) return;
+		long dueWorldTime = nextAssignmentWorldTime(state.lastAssignedWorldTime());
+		QuestScheduleEntry previous = SCHEDULE_BY_PLAYER.remove(player.getUUID());
+		if (previous != null) ASSIGNMENT_SCHEDULE.remove(previous);
+		if (dueWorldTime == Long.MAX_VALUE) return;
+		QuestScheduleEntry next = new QuestScheduleEntry(
+			player.getUUID(),
+			dueWorldTime,
+			state.lastAssignedWorldTime()
+		);
+		SCHEDULE_BY_PLAYER.put(player.getUUID(), next);
+		ASSIGNMENT_SCHEDULE.add(next);
+	}
+
+	private static void removeScheduledAssignment(UUID playerId) {
+		if (playerId == null) return;
+		QuestScheduleEntry scheduled = SCHEDULE_BY_PLAYER.remove(playerId);
+		if (scheduled != null) ASSIGNMENT_SCHEDULE.remove(scheduled);
+	}
+
+	private static long nextAssignmentWorldTime(long lastAssignedWorldTime) {
+		if (lastAssignedWorldTime == Long.MIN_VALUE || lastAssignedWorldTime >= Long.MAX_VALUE - QUEST_INTERVAL_WORLD_TICKS) {
+			return Long.MAX_VALUE;
+		}
+		return lastAssignedWorldTime + QUEST_INTERVAL_WORLD_TICKS;
+	}
+
+	private static long currentWorldTime(MinecraftServer server) {
+		return Math.max(0L, TimeAPIManager.getCurrentAbsoluteDayTime(server == null ? null : server.overworld()));
 	}
 
 	private static String readString(JsonObject source, String key, String fallback) {
@@ -684,15 +775,26 @@ final class QuestsStateManager {
 		private int displayProgress() {
 			QuestDefinition definition = definition();
 			if (definition == null || progress.length == 0) return 0;
-			int minimum = Integer.MAX_VALUE;
-			for (int value : progress) minimum = Math.min(minimum, value);
-			return minimum == Integer.MAX_VALUE ? 0 : minimum;
+			int displayRequired = displayRequired();
+			if (displayRequired <= 0) return 0;
+			double lowestRatio = 1.0D;
+			for (int index = 0; index < progress.length; index++) {
+				int required = requiredCount(definition, index);
+				if (required <= 0) continue;
+				int objectiveProgress = Math.min(progress[index], required);
+				lowestRatio = Math.min(lowestRatio, (double) objectiveProgress / required);
+			}
+			return Math.max(0, Math.min(displayRequired, (int) Math.floor(lowestRatio * displayRequired)));
 		}
 
 		private int displayRequired() {
 			QuestDefinition definition = definition();
 			if (definition == null || definition.objectives().isEmpty()) return 0;
-			return requiredCount(definition, 0);
+			int maximum = 0;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				maximum = Math.max(maximum, requiredCount(definition, index));
+			}
+			return maximum;
 		}
 
 		private boolean isComplete() {
@@ -705,24 +807,38 @@ final class QuestsStateManager {
 		}
 	}
 
+	private record QuestScheduleEntry(UUID playerId, long dueWorldTime, long cursorWorldTime) {
+	}
+
 	private static final class PlayerQuestState {
-		private long lastAssignedDay;
+		private long lastAssignedWorldTime;
 		private final List<QuestRecord> quests;
+		private final Map<String, QuestRecord> questsById;
 		private boolean synchronizedState;
 
-		private PlayerQuestState(long lastAssignedDay, List<QuestRecord> quests) {
-			this.lastAssignedDay = lastAssignedDay;
+		private PlayerQuestState(long lastAssignedWorldTime, List<QuestRecord> quests) {
+			this.lastAssignedWorldTime = lastAssignedWorldTime;
 			this.quests = quests;
+			this.questsById = new HashMap<>();
+			for (QuestRecord quest : quests) this.questsById.put(quest.definitionId(), quest);
 		}
 
-		private long lastAssignedDay() { return lastAssignedDay; }
-		private void lastAssignedDay(long value) { lastAssignedDay = value; }
+		private long lastAssignedWorldTime() { return lastAssignedWorldTime; }
+		private void lastAssignedWorldTime(long value) { lastAssignedWorldTime = value; }
 		private List<QuestRecord> quests() { return quests; }
-		private boolean containsDefinition(String definitionId) { return QuestsStateManager.containsDefinition(quests, definitionId); }
+		private void addQuest(QuestRecord quest) {
+			if (quest == null || questsById.containsKey(quest.definitionId())) return;
+			quests.add(quest);
+			questsById.put(quest.definitionId(), quest);
+		}
+		private QuestRecord quest(String definitionId) { return questsById.get(definitionId); }
+		private void removeQuest(String definitionId) {
+			QuestRecord quest = questsById.remove(definitionId);
+			if (quest != null) quests.remove(quest);
+		}
+		private boolean containsDefinition(String definitionId) { return questsById.containsKey(definitionId); }
 		private Set<String> definitionIds() {
-			Set<String> ids = new HashSet<>();
-			for (QuestRecord quest : quests) ids.add(quest.definitionId());
-			return ids;
+			return new HashSet<>(questsById.keySet());
 		}
 		private boolean needsInitialSync() { return !synchronizedState; }
 		private void markSynchronized() { synchronizedState = true; }
