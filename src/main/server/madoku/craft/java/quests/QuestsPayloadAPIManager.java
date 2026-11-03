@@ -29,4 +29,23 @@ public record QuestsPayloadAPIManager(long day, String quests) implements Custom
 	public Type<QuestsPayloadAPIManager> type() {
 		return TYPE;
 	}
+
+	public record TurnInPayload(String categoryId, int questIndex) implements CustomPacketPayload {
+		public static final Type<TurnInPayload> TYPE =
+			new Type<>(Identifier.fromNamespaceAndPath("madoku-craft", "quests_turn_in"));
+		public static final StreamCodec<RegistryFriendlyByteBuf, TurnInPayload> CODEC = StreamCodec.composite(
+			ByteBufCodecs.STRING_UTF8, TurnInPayload::categoryId,
+			ByteBufCodecs.VAR_INT, TurnInPayload::questIndex,
+			TurnInPayload::new
+		);
+
+		public TurnInPayload {
+			if (categoryId == null) categoryId = "";
+		}
+
+		@Override
+		public Type<TurnInPayload> type() {
+			return TYPE;
+		}
+	}
 }

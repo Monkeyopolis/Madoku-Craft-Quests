@@ -19,6 +19,7 @@ public final class MadokuQuestsInitializer implements ModInitializer, MadokuStan
 
 	@Override
 	public void initialize() {
+		QuestConfigManager.initialize();
 		QuestsStateManager.initialize();
 	}
 
@@ -33,12 +34,28 @@ public final class MadokuQuestsInitializer implements ModInitializer, MadokuStan
 	}
 
 	@Override
+	public void loadPersistedData(net.minecraft.server.MinecraftServer server) {
+		QuestConfigManager.reload();
+		QuestsStateManager.loadPersistedData(server);
+	}
+
+	@Override
 	public void onServerTick(net.minecraft.server.MinecraftServer server) {
 		QuestsStateManager.onServerTick(server);
 	}
 
 	@Override
+	public void autosavePersistedData(net.minecraft.server.MinecraftServer server) {
+		QuestsStateManager.autosavePersistedData(server);
+	}
+
+	@Override
+	public void onServerStopping(net.minecraft.server.MinecraftServer server) {
+		QuestsStateManager.savePersistedData(server);
+	}
+
+	@Override
 	public void onServerStopped(net.minecraft.server.MinecraftServer server) {
-		QuestsStateManager.onServerStopped();
+		QuestsStateManager.onServerStopped(server);
 	}
 }

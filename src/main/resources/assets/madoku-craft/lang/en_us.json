@@ -1,0 +1,16 @@
+{
+  "menu.madoku-craft.quests": "Quests",
+  "menu.madoku-craft.quests.title": "Madoku Quests",
+  "menu.madoku-craft.quests.categories": "Tabs",
+  "menu.madoku-craft.quests.category.core": "Main Quests",
+  "menu.madoku-craft.quests.category.farming": "Farming Quests",
+  "menu.madoku-craft.quests.category.mobs": "Mob Quests",
+  "menu.madoku-craft.quests.category.pets": "Pet Quests",
+  "menu.madoku-craft.quests.difficulty.easy": "Easy",
+  "menu.madoku-craft.quests.difficulty.normal": "Normal",
+  "menu.madoku-craft.quests.difficulty.hard": "Hard",
+  "menu.madoku-craft.quests.lumberjack": "Lumberjack %s",
+  "menu.madoku-craft.quests.lumberjack.description": "Collect %s wood logs.",
+  "menu.madoku-craft.quests.new_in": "New quest in %s",
+  "menu.madoku-craft.quests.no_new": "No new quests."
+}

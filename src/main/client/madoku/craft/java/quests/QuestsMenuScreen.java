@@ -56,6 +56,9 @@ public final class QuestsMenuScreen extends Screen {
 	private static final int QUEST_ENTRY_GAP = 4;
 	private static final int QUEST_TEXT_X = 9;
 	private static final int QUEST_TEXT_MAX_WIDTH = 78;
+	private static final int QUEST_DESCRIPTION_Y = 17;
+	private static final int QUEST_PROGRESS_GAP = 4;
+	private static final int QUEST_PROGRESS_BAR_GAP = 2;
 	private static final int QUEST_STATUS_X = 93;
 	private static final int QUEST_STATUS_Y = 14;
 	private static final int SCROLLER_X = 158;
@@ -71,7 +74,6 @@ public final class QuestsMenuScreen extends Screen {
 	private static final int TEXT_COLOR = 0xFF404040;
 	private static final float QUEST_TEXT_SCALE = 0.7F;
 
-	private final boolean[] completed = new boolean[MAX_QUESTS_PER_CATEGORY];
 	private List<MadokuQuestsClient.QuestCategory> categories = List.of();
 	private int selectedCategory;
 	private int scrollOffset;
@@ -125,7 +127,6 @@ public final class QuestsMenuScreen extends Screen {
 			if (selectedCategory != index) {
 				selectedCategory = index;
 				scrollOffset = 0;
-				java.util.Arrays.fill(completed, false);
 				MenuSoundManager.playButtonClick();
 			}
 			return true;
@@ -144,9 +145,10 @@ public final class QuestsMenuScreen extends Screen {
 				String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
 				boolean alreadySelected = MadokuQuestsClient.isQuestSelected(categoryId, index);
 				if (statusBounds(entry).contains(event.x(), event.y())) {
-					if (!alreadySelected) MadokuQuestsClient.selectQuest(categoryId, index);
-					completed[index] = true;
-					MenuSoundManager.playButtonClick();
+					if (MadokuQuestsClient.questComplete(categoryId, index)) {
+						MadokuQuestsClient.turnInQuest(categoryId, index);
+						MenuSoundManager.playButtonClick();
+					}
 				} else {
 					if (alreadySelected) MadokuQuestsClient.deselectQuest();
 					else MadokuQuestsClient.selectQuest(categoryId, index);
@@ -301,18 +303,62 @@ public final class QuestsMenuScreen extends Screen {
 				QUEST_ENTRY_WIDTH,
 				QUEST_ENTRY_HEIGHT
 			);
+			String questTitle = MadokuQuestsClient.questTitle(
+				selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "",
+				index
+			);
+			String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
+			String questDescription = MadokuQuestsClient.questDescription(categoryId, index);
+			String questProgress = MadokuQuestsClient.questProgress(categoryId, index);
+			MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
+			float descriptionScale = fittedTextScale(questDescription, QUEST_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
+			int descriptionY = entry.y() + QUEST_DESCRIPTION_Y;
 			drawFittedLeftText(
 				guiGraphics,
-				categoryName + " " + Component.translatable("menu.madoku-craft.quests.placeholder", index + 1).getString(),
+				questTitle,
 				entry.x() + QUEST_TEXT_X,
 				entry.y() + 6,
 				QUEST_TEXT_SCALE,
 				QUEST_TEXT_MAX_WIDTH,
 				TEXT_COLOR
 			);
+			drawFittedLeftText(
+				guiGraphics,
+				questDescription,
+				entry.x() + QUEST_TEXT_X,
+				descriptionY,
+				QUEST_TEXT_SCALE,
+				QUEST_TEXT_MAX_WIDTH,
+				TEXT_COLOR
+			);
+			drawFittedLeftText(
+				guiGraphics,
+				questProgress,
+				entry.x() + QUEST_TEXT_X,
+				descriptionY + scaledTextHeight(descriptionScale) + QUEST_PROGRESS_GAP,
+				QUEST_TEXT_SCALE,
+				QUEST_TEXT_MAX_WIDTH,
+				TEXT_COLOR
+			);
+			if (questEntry != null) {
+				float progressScale = fittedTextScale(questProgress, QUEST_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
+				QuestProgressRenderer.draw(
+					guiGraphics,
+					entry.x() + QUEST_TEXT_X,
+					descriptionY + scaledTextHeight(descriptionScale) + QUEST_PROGRESS_GAP
+						+ scaledTextHeight(progressScale) + QUEST_PROGRESS_BAR_GAP,
+					QuestProgressRenderer.BAR_WIDTH,
+					QuestProgressRenderer.BAR_HEIGHT,
+					questEntry.progress(),
+					questEntry.required()
+				);
+			}
 			guiGraphics.blit(
 				RenderPipelines.GUI_TEXTURED,
-				completed[index] ? COMPLETED_BUTTON_TEXTURE : INCOMPLETE_BUTTON_TEXTURE,
+				MadokuQuestsClient.questComplete(
+					selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "",
+					index
+				) ? COMPLETED_BUTTON_TEXTURE : INCOMPLETE_BUTTON_TEXTURE,
 				entry.x() + QUEST_STATUS_X,
 				entry.y() + QUEST_STATUS_Y,
 				0.0F,

@@ -8,7 +8,6 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 /** Renders the globally selected quest during gameplay and participates in the Alt-held layout editor. */
@@ -21,20 +20,25 @@ final class QuestHudManager {
 	private static final int DEFAULT_VERTICAL_DIVISOR = 4;
 	private static final int TITLE_X = 0;
 	private static final int TITLE_SEPARATOR_Y = 13;
+	private static final int TITLE_SEPARATOR_HEIGHT = 2;
 	private static final int TITLE_MAX_WIDTH = 78;
-	private static final int OBJECTIVE_X = 0;
-	private static final int OBJECTIVE_Y = 24;
-	private static final int OBJECTIVE_MAX_WIDTH = 78;
+	private static final int DESCRIPTION_X = 0;
+	private static final int DESCRIPTION_GAP = 2;
+	private static final int DESCRIPTION_Y = TITLE_SEPARATOR_Y + TITLE_SEPARATOR_HEIGHT + DESCRIPTION_GAP;
+	private static final int DESCRIPTION_MAX_WIDTH = 78;
+	private static final int PROGRESS_X = 0;
+	private static final int PROGRESS_GAP = 4;
+	private static final int PROGRESS_BAR_GAP = 2;
 	private static final int TEXT_GAP = 2;
 	private static final float TEXT_SCALE = 0.7F;
 	private static final int TEXT_COLOR = 0xFFFFFFFF;
-	private static final String OBJECTIVE_TEXT_KEY = "menu.madoku-craft.quests.hud.placeholder";
 	private static int defaultX;
 	private static int defaultY;
 	private static boolean defaultPositionInitialized;
 	private static int cachedDisplayVersion = Integer.MIN_VALUE;
 	private static String cachedQuestTitle;
-	private static String cachedObjective;
+	private static String cachedDescription;
+	private static String cachedProgress;
 	private static boolean initialized;
 	private static final UiLayoutElement QUEST_HUD_LAYOUT = new UiLayoutElement() {
 		@Override public Identifier id() { return QUEST_HUD_LAYOUT_ID; }
@@ -91,19 +95,49 @@ final class QuestHudManager {
 		);
 		float titleScale = fittedTextScale(client, questTitle, TEXT_SCALE, TITLE_MAX_WIDTH);
 		drawScaledLeftText(context, client, questTitle, x + TITLE_X, y + TITLE_SEPARATOR_Y - TEXT_GAP - scaledTextHeight(client, titleScale), titleScale);
-		String objective = cachedObjective;
-		float objectiveScale = fittedTextScale(client, objective, TEXT_SCALE, OBJECTIVE_MAX_WIDTH);
-		drawScaledLeftText(context, client, objective, x + OBJECTIVE_X, y + OBJECTIVE_Y, objectiveScale);
+		String description = cachedDescription;
+		float descriptionScale = fittedTextScale(client, description, TEXT_SCALE, DESCRIPTION_MAX_WIDTH);
+		int descriptionY = y + DESCRIPTION_Y;
+		drawScaledLeftText(context, client, description, x + DESCRIPTION_X, descriptionY, descriptionScale);
+
+		String progress = cachedProgress;
+		float progressScale = fittedTextScale(client, progress, TEXT_SCALE, QuestProgressRenderer.BAR_WIDTH);
+		int progressY = descriptionY + scaledTextHeight(client, descriptionScale) + PROGRESS_GAP;
+		drawScaledLeftText(context, client, progress, x + PROGRESS_X, progressY, progressScale);
+		QuestProgressRenderer.draw(
+			context,
+			x,
+			progressY + scaledTextHeight(client, progressScale) + PROGRESS_BAR_GAP,
+			QuestProgressRenderer.BAR_WIDTH,
+			QuestProgressRenderer.BAR_HEIGHT,
+			selectedQuestProgress(),
+			selectedQuestRequired()
+		);
 	}
 
 	private static String selectedQuestTitle() {
 		int currentVersion = MadokuQuestsClient.displayVersion();
 		if (currentVersion != cachedDisplayVersion) {
 			cachedQuestTitle = MadokuQuestsClient.selectedQuestDisplayText();
-			cachedObjective = cachedQuestTitle == null ? null : Component.translatable(OBJECTIVE_TEXT_KEY).getString();
+			cachedDescription = cachedQuestTitle == null ? null : MadokuQuestsClient.selectedQuestDescriptionText();
+			cachedProgress = cachedQuestTitle == null ? null : MadokuQuestsClient.selectedQuestProgressText();
 			cachedDisplayVersion = currentVersion;
 		}
 		return cachedQuestTitle;
+	}
+
+	private static int selectedQuestProgress() {
+		MadokuQuestsClient.QuestSelection selection = MadokuQuestsClient.selectedQuest();
+		if (selection == null) return 0;
+		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.questEntry(selection.categoryId(), selection.questIndex());
+		return entry == null ? 0 : entry.progress();
+	}
+
+	private static int selectedQuestRequired() {
+		MadokuQuestsClient.QuestSelection selection = MadokuQuestsClient.selectedQuest();
+		if (selection == null) return 0;
+		MadokuQuestsClient.QuestEntry entry = MadokuQuestsClient.questEntry(selection.categoryId(), selection.questIndex());
+		return entry == null ? 0 : entry.required();
 	}
 
 	private static boolean hasRenderablePlayer(Minecraft client, boolean editing) {
