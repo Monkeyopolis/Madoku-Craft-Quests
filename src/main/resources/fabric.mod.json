@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "madoku-craft-quests",
+  "version": "${version}",
+  "name": "Madoku Craft: Quests",
+  "description": "A configurable quest progression mod.",
+  "authors": ["Monkeyopolis"],
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["madoku.craft.java.quests.MadokuQuestsInitializer"],
+    "client": ["madoku.craft.java.quests.MadokuQuestsClientInitializer"]
+  },
+  "mixins": ["madoku-craft-quests.mixins.json"],
+  "depends": {
+    "fabricloader": "${loader_version}",
+    "minecraft": "~${minecraft_version}",
+    "java": ">=25",
+    "fabric-api": "${fabric_api_version}",
+    "madoku-craft-core": "*"
+  }
+}
