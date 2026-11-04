@@ -34,6 +34,8 @@ public final class MadokuQuestsClient {
 	private static final String SELECTED_QUEST = "selected-quest";
 	private static final String SELECTION_CONFIGURED = "selection-configured";
 	private static final String QUEST_ID = "id";
+	private static final long OBJECTIVE_TARGET_CYCLE_MILLIS = 5_000L;
+	private static final long OBJECTIVE_TARGET_CYCLE_START_MILLIS = System.currentTimeMillis();
 	private static final List<CategoryDefinition> CATEGORY_DEFINITIONS = List.of(
 		new CategoryDefinition(QuestRegistry.CORE_CATEGORY, "menu.madoku-craft.quests.category.core", MadokuModuleIds.CORE, "core-quests.png"),
 		new CategoryDefinition(QuestRegistry.FARMING_CATEGORY, "menu.madoku-craft.quests.category.farming", MadokuModuleIds.FARMING, "farming-quests.png"),
@@ -203,14 +205,24 @@ public final class MadokuQuestsClient {
 
 	static String objectiveDescription(QuestObjectiveEntry objective) {
 		if (objective == null) return "";
+		String targetName = objectiveTargetName(objective);
 		if (!objective.descriptionKey().isBlank()) {
-			return Component.translatable(objective.descriptionKey(), objective.required()).getString();
+			return objective.targetIds().size() > 1
+				? Component.translatable(objective.descriptionKey(), objective.required(), targetName).getString()
+				: Component.translatable(objective.descriptionKey(), objective.required()).getString();
 		}
-		String targetName = objective.targetId().isBlank()
-			? "objective"
-			: objective.targetId().substring(objective.targetId().indexOf(':') + 1).replace('_', ' ');
 		String actionKey = "menu.madoku-craft.quests.objective." + normalizeId(objective.subcategory());
-		return Component.translatable(actionKey, targetName).getString();
+		return Component.translatable(actionKey, objective.required(), targetName).getString();
+	}
+
+	private static String objectiveTargetName(QuestObjectiveEntry objective) {
+		List<String> targetIds = objective.targetIds();
+		if (targetIds.isEmpty()) return "objective";
+		long elapsed = Math.max(0L, System.currentTimeMillis() - OBJECTIVE_TARGET_CYCLE_START_MILLIS);
+		int targetIndex = (int) ((elapsed / OBJECTIVE_TARGET_CYCLE_MILLIS) % targetIds.size());
+		String targetId = targetIds.get(targetIndex);
+		int namespaceSeparator = targetId.indexOf(':');
+		return (namespaceSeparator >= 0 ? targetId.substring(namespaceSeparator + 1) : targetId).replace('_', ' ');
 	}
 
 	static boolean questComplete(String categoryId, int questIndex) {
@@ -236,13 +248,15 @@ public final class MadokuQuestsClient {
 						String id = readString(entry, "id", "");
 						String category = readString(entry, "category", "");
 						String difficulty = readString(entry, "difficulty", "");
+						String rarity = readString(entry, "rarity", QuestRarity.COMMON.id());
 						String titleKey = readString(entry, "title-key", "");
 						String descriptionKey = readString(entry, "description-key", "");
 						if (id.isBlank()
 							|| category.isBlank()
 							|| titleKey.isBlank()
 							|| descriptionKey.isBlank()
-							|| QuestDifficulty.fromId(difficulty) == null) continue;
+							|| QuestDifficulty.fromId(difficulty) == null
+							|| QuestRarity.fromId(rarity) == null) continue;
 						int displayProgress = Math.max(0, readInt(entry, "display-progress", 0));
 						int displayRequired = Math.max(0, readInt(entry, "display-required", 0));
 						List<QuestObjectiveEntry> objectives = readObjectiveEntries(
@@ -257,6 +271,7 @@ public final class MadokuQuestsClient {
 								id,
 								category,
 								difficulty,
+								rarity,
 								titleKey,
 								descriptionKey,
 								displayProgress,
@@ -295,11 +310,17 @@ public final class MadokuQuestsClient {
 			for (JsonElement objectiveElement : element.getAsJsonArray()) {
 				if (objectives.size() >= 3 || objectiveElement == null || !objectiveElement.isJsonObject()) break;
 				JsonObject objective = objectiveElement.getAsJsonObject();
+				String targetId = readString(objective, "target-id", "");
+				List<String> targetIds = readStrings(objective, "target-ids");
+				List<String> displayTargetIds = readStrings(objective, "display-target-ids");
+				if (!displayTargetIds.isEmpty()) targetIds = displayTargetIds;
+				if (targetIds.isEmpty() && !targetId.isBlank()) targetIds = List.of(targetId);
 				int required = Math.max(1, readInt(objective, "required", 0));
 				objectives.add(new QuestObjectiveEntry(
 					readString(objective, "description-key", ""),
 					readString(objective, "subcategory", "collect"),
-					readString(objective, "target-id", ""),
+					targetId,
+					targetIds,
 					Math.max(0, readInt(objective, "progress", 0)),
 					required
 				));
@@ -310,6 +331,7 @@ public final class MadokuQuestsClient {
 				fallbackDescriptionKey,
 				"collect",
 				"",
+				List.of(),
 				fallbackProgress,
 				fallbackRequired
 			));
@@ -395,6 +417,19 @@ public final class MadokuQuestsClient {
 		}
 	}
 
+	private static List<String> readStrings(JsonObject source, String key) {
+		JsonElement element = source == null ? null : source.get(key);
+		if (element == null || !element.isJsonArray()) return List.of();
+		List<String> values = new ArrayList<>();
+		for (JsonElement value : element.getAsJsonArray()) {
+			if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+				String string = value.getAsString().trim().toLowerCase(Locale.ROOT);
+				if (!string.isBlank()) values.add(string);
+			}
+		}
+		return List.copyOf(values);
+	}
+
 	private static boolean readBoolean(JsonObject source, String key, boolean fallback) {
 		try {
 			return source != null && source.has(key) ? source.get(key).getAsBoolean() : fallback;
@@ -424,6 +459,7 @@ public final class MadokuQuestsClient {
 		String id,
 		String categoryId,
 		String difficulty,
+		String rarity,
 		String titleKey,
 		String descriptionKey,
 		int progress,
@@ -440,6 +476,7 @@ public final class MadokuQuestsClient {
 		String descriptionKey,
 		String subcategory,
 		String targetId,
+		List<String> targetIds,
 		int progress,
 		int required
 	) {
@@ -447,8 +484,26 @@ public final class MadokuQuestsClient {
 			descriptionKey = descriptionKey == null ? "" : descriptionKey.trim();
 			subcategory = subcategory == null ? "collect" : subcategory.trim().toLowerCase(Locale.ROOT);
 			targetId = targetId == null ? "" : targetId.trim().toLowerCase(Locale.ROOT);
+			List<String> normalizedTargetIds = new ArrayList<>();
+			if (targetIds != null) {
+				for (String value : targetIds) {
+					if (value != null && !value.isBlank()) normalizedTargetIds.add(value.trim().toLowerCase(Locale.ROOT));
+				}
+			}
+			if (normalizedTargetIds.isEmpty() && !targetId.isBlank()) normalizedTargetIds.add(targetId);
+			targetIds = List.copyOf(normalizedTargetIds);
 			required = Math.max(1, required);
 			progress = Math.max(0, Math.min(progress, required));
+		}
+
+		public QuestObjectiveEntry(
+			String descriptionKey,
+			String subcategory,
+			String targetId,
+			int progress,
+			int required
+		) {
+			this(descriptionKey, subcategory, targetId, List.of(targetId), progress, required);
 		}
 	}
 

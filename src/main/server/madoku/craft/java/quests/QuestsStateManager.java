@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +58,7 @@ final class QuestsStateManager {
 	private static final String ID = "id";
 	private static final String CATEGORY = "category";
 	private static final String DIFFICULTY = "difficulty";
+	private static final String RARITY = "rarity";
 	private static final String TITLE_KEY = "title-key";
 	private static final String DESCRIPTION_KEY = "description-key";
 	private static final String OBJECTIVES = "objectives";
@@ -64,6 +66,8 @@ final class QuestsStateManager {
 	private static final String OBJECTIVE_DESCRIPTION_KEY = "description-key";
 	private static final String TARGET_KIND = "target-kind";
 	private static final String TARGET_ID = "target-id";
+	private static final String TARGET_IDS = "target-ids";
+	private static final String DISPLAY_TARGET_IDS = "display-target-ids";
 	private static final String PROGRESS_VALUE = "progress";
 	private static final String REQUIRED_VALUE = "required";
 	private static final String PROGRESS = "progress";
@@ -204,6 +208,28 @@ final class QuestsStateManager {
 		if (player == null || item == null || amount <= 0) return;
 		PlayerQuestState state = stateFor(player);
 		boolean changed = state.addCollected(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
+	static void onItemSmelted(ServerPlayer player, Item item, int amount) {
+		if (player == null || item == null || amount <= 0) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = state.addSmelted(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
+	static void onItemUsed(ServerPlayer player, Item item, int amount) {
+		if (player == null || item == null || amount <= 0) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = state.addUsed(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
+	static void onBlockStripped(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {
+		if (player == null || level == null || pos == null || state == null) return;
+		if (player.isCreative()) return;
+		PlayerQuestState questState = stateFor(player);
+		boolean changed = questState.addStripped(state);
 		if (changed) markProgressChanged(player);
 	}
 
@@ -388,6 +414,7 @@ final class QuestsStateManager {
 		QuestDefinition firstMainQuest = QuestRegistry.firstMainQuest();
 		if (!MadokuModuleLifecycleManager.server().isRunning(core.moduleId())
 			|| firstMainQuest == null
+			|| firstMainQuest.rarity() != QuestRarity.COMMON
 			|| count(state, core.id()) >= MAX_QUESTS_PER_CATEGORY) {
 			return false;
 		}
@@ -482,7 +509,12 @@ final class QuestsStateManager {
 		String id = readString(source, ID, "");
 		QuestDefinition definition = QuestRegistry.get(id);
 		QuestDifficulty difficulty = QuestDifficulty.fromId(readString(source, DIFFICULTY, ""));
-		if (definition == null || difficulty == null) return null;
+		QuestRarity rarity = QuestRarity.fromId(readString(
+			source,
+			RARITY,
+			definition == null ? QuestRarity.COMMON.id() : definition.rarity().id()
+		));
+		if (definition == null || difficulty == null || rarity == null) return null;
 		int[] progress = new int[definition.objectives().size()];
 		JsonElement progressElement = source.get(PROGRESS);
 		if (progressElement != null && progressElement.isJsonArray()) {
@@ -491,7 +523,7 @@ final class QuestsStateManager {
 				progress[index] = clampProgress(values.get(index), difficulty.scaledCount(definition.objectives().get(index).requiredCount()));
 			}
 		}
-		return new QuestRecord(definition.id(), difficulty, progress);
+		return new QuestRecord(definition.id(), difficulty, rarity, progress);
 	}
 
 	private static boolean containsDefinition(List<QuestRecord> quests, String definitionId) {
@@ -520,6 +552,7 @@ final class QuestsStateManager {
 			entry.addProperty(ID, definition.id());
 			entry.addProperty(CATEGORY, definition.categoryId());
 			entry.addProperty(DIFFICULTY, quest.difficulty().id());
+			entry.addProperty(RARITY, quest.rarity().id());
 			JsonArray progress = new JsonArray();
 			for (int value : quest.progress()) progress.add(value);
 			entry.add(PROGRESS, progress);
@@ -573,6 +606,7 @@ final class QuestsStateManager {
 			entry.addProperty(ID, definition.id());
 			entry.addProperty(CATEGORY, definition.categoryId());
 			entry.addProperty(DIFFICULTY, quest.difficulty().id());
+			entry.addProperty(RARITY, quest.rarity().id());
 			entry.addProperty(TITLE_KEY, definition.titleKey());
 			entry.addProperty(DESCRIPTION_KEY, definition.descriptionKey());
 			entry.addProperty("display-progress", quest.displayProgress());
@@ -586,6 +620,12 @@ final class QuestsStateManager {
 				objectiveEntry.addProperty(OBJECTIVE_DESCRIPTION_KEY, objective.descriptionKey());
 				objectiveEntry.addProperty(TARGET_KIND, objective.target().kind().name().toLowerCase(Locale.ROOT));
 				objectiveEntry.addProperty(TARGET_ID, objective.target().id());
+				JsonArray targetIds = new JsonArray();
+				for (String targetId : objective.target().ids()) targetIds.add(targetId);
+				objectiveEntry.add(TARGET_IDS, targetIds);
+				JsonArray displayTargetIds = new JsonArray();
+				for (String targetId : objective.displayTargetIds()) displayTargetIds.add(targetId);
+				objectiveEntry.add(DISPLAY_TARGET_IDS, displayTargetIds);
 				objectiveEntry.addProperty(PROGRESS_VALUE, quest.progress()[index]);
 				objectiveEntry.addProperty(REQUIRED_VALUE, quest.requiredCount(definition, index));
 				objectives.add(objectiveEntry);
@@ -680,16 +720,18 @@ final class QuestsStateManager {
 	private static final class QuestRecord {
 		private final String definitionId;
 		private final QuestDifficulty difficulty;
+		private final QuestRarity rarity;
 		private final int[] progress;
 
-		private QuestRecord(String definitionId, QuestDifficulty difficulty, int[] progress) {
+		private QuestRecord(String definitionId, QuestDifficulty difficulty, QuestRarity rarity, int[] progress) {
 			this.definitionId = definitionId;
 			this.difficulty = difficulty;
+			this.rarity = rarity;
 			this.progress = progress;
 		}
 
 		private static QuestRecord create(QuestDefinition definition, QuestDifficulty difficulty) {
-			return new QuestRecord(definition.id(), difficulty, new int[definition.objectives().size()]);
+			return new QuestRecord(definition.id(), difficulty, definition.rarity(), new int[definition.objectives().size()]);
 		}
 
 		private QuestDefinition definition() {
@@ -708,16 +750,22 @@ final class QuestsStateManager {
 			return difficulty;
 		}
 
+		private QuestRarity rarity() {
+			return rarity;
+		}
+
 		private double rewardMultiplier() {
 			QuestDefinition definition = definition();
 			if (definition == null) return 1.0D;
-			double multiplier = 1.0D;
+		EnumSet<QuestSubcategory> appliedSubcategories = EnumSet.noneOf(QuestSubcategory.class);
+			double subcategoryMultiplier = 1.0D;
 			for (QuestObjective objective : definition.objectives()) {
-				if (objective != null && objective.subcategory() != null) {
-					multiplier = Math.max(multiplier, objective.subcategory().rewardMultiplier());
+				if (objective == null || objective.subcategory() == null || !appliedSubcategories.add(objective.subcategory())) {
+					continue;
 				}
+				subcategoryMultiplier += objective.subcategory().rewardMultiplier() - 1.0D;
 			}
-			return multiplier;
+			return Math.max(1.0D, subcategoryMultiplier + rarity.rewardMultiplier() - 1.0D);
 		}
 
 		private int requiredCount(QuestDefinition definition, int index) {
@@ -740,6 +788,21 @@ final class QuestsStateManager {
 			return changed;
 		}
 
+		private boolean addStripped(BlockState state) {
+			QuestDefinition definition = definition();
+			if (definition == null) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.STRIP) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchesBlock(objective.target(), state)) continue;
+				progress[index]++;
+				changed = true;
+			}
+			return changed;
+		}
+
 		private boolean addCollected(Item item, int amount) {
 			QuestDefinition definition = definition();
 			if (definition == null || amount <= 0) return false;
@@ -750,6 +813,39 @@ final class QuestsStateManager {
 				int required = requiredCount(definition, index);
 				boolean matches = matchesItem(objective.target(), item);
 				if (progress[index] >= required || !matches) continue;
+				int next = (int) Math.min(required, (long) progress[index] + amount);
+				changed |= next != progress[index];
+				progress[index] = next;
+			}
+			return changed;
+		}
+
+		private boolean addSmelted(Item item, int amount) {
+			QuestDefinition definition = definition();
+			if (definition == null || amount <= 0) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.SMELT) continue;
+				int required = requiredCount(definition, index);
+				boolean matches = matchesItem(objective.target(), item);
+				if (progress[index] >= required || !matches) continue;
+				int next = (int) Math.min(required, (long) progress[index] + amount);
+				changed |= next != progress[index];
+				progress[index] = next;
+			}
+			return changed;
+		}
+
+		private boolean addUsed(Item item, int amount) {
+			QuestDefinition definition = definition();
+			if (definition == null || amount <= 0) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.USE) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchesItem(objective.target(), item)) continue;
 				int next = (int) Math.min(required, (long) progress[index] + amount);
 				changed |= next != progress[index];
 				progress[index] = next;
@@ -831,9 +927,27 @@ final class QuestsStateManager {
 			return changed;
 		}
 
+		private boolean addStripped(BlockState state) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addStripped(state);
+			return changed;
+		}
+
 		private boolean addCollected(Item item, int amount) {
 			boolean changed = false;
 			for (QuestRecord quest : quests) changed |= quest.addCollected(item, amount);
+			return changed;
+		}
+
+		private boolean addSmelted(Item item, int amount) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addSmelted(item, amount);
+			return changed;
+		}
+
+		private boolean addUsed(Item item, int amount) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addUsed(item, amount);
 			return changed;
 		}
 	}

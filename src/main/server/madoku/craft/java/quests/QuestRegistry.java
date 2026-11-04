@@ -16,7 +16,19 @@ public final class QuestRegistry {
 	public static final String PETS_CATEGORY = QuestCategoryIds.PETS;
 	public static final String LUMBERJACK = CoreQuestRegistrar.LUMBERJACK;
 	public static final String STONEWORKS = CoreQuestRegistrar.STONEWORKS;
+	public static final String DIRT_COLLECTOR = CoreQuestRegistrar.DIRT_COLLECTOR;
+	public static final String COLLECTING_FLINT = CoreQuestRegistrar.COLLECTING_FLINT;
 	public static final String COAL_MINER = CoreQuestRegistrar.COAL_MINER;
+	public static final String DIAMONDS = CoreQuestRegistrar.DIAMONDS;
+	public static final String OBSIDIAN = CoreQuestRegistrar.OBSIDIAN;
+	public static final String FLAMING_HOT = CoreQuestRegistrar.FLAMING_HOT;
+	public static final String GLASS_MAKER = CoreQuestRegistrar.GLASS_MAKER;
+	public static final String SHINY_GOLD = CoreQuestRegistrar.SHINY_GOLD;
+	public static final String STURDY_IRON = CoreQuestRegistrar.STURDY_IRON;
+	public static final String COPPER_SPECIALIST = CoreQuestRegistrar.COPPER_SPECIALIST;
+	public static final String ORE_SMELTER = CoreQuestRegistrar.ORE_SMELTER;
+	public static final String STONE_VARIETY = CoreQuestRegistrar.STONE_VARIETY;
+	public static final String PROCESSING_LOGS = CoreQuestRegistrar.PROCESSING_LOGS;
 
 	private static final Map<String, QuestDefinition> DEFINITIONS = new LinkedHashMap<>();
 	private static final List<QuestCategoryRegistrar> BUILT_IN_REGISTRARS = List.of(
@@ -90,8 +102,15 @@ public final class QuestRegistry {
 
 	public static QuestDefinition firstMainQuest() {
 		QuestDefinition lumberjack = get(LUMBERJACK);
-		if (lumberjack != null && CORE_CATEGORY.equals(lumberjack.categoryId())) return lumberjack;
-		return forCategory(CORE_CATEGORY).stream().findFirst().orElse(null);
+		if (lumberjack != null
+			&& CORE_CATEGORY.equals(lumberjack.categoryId())
+			&& lumberjack.rarity() == QuestRarity.COMMON) {
+			return lumberjack;
+		}
+		return forCategory(CORE_CATEGORY).stream()
+			.filter(definition -> definition.rarity() == QuestRarity.COMMON)
+			.findFirst()
+			.orElse(null);
 	}
 
 	public static List<QuestDefinition> forCategory(String categoryId) {
@@ -116,18 +135,44 @@ public final class QuestRegistry {
 			.filter(definition -> excludedIds == null || !excludedIds.contains(definition.id()))
 			.toList();
 		if (definitions.isEmpty()) return null;
-		List<QuestDifficulty> availableDifficulties = List.of(QuestDifficulty.values());
-		int totalWeight = availableDifficulties.stream().mapToInt(QuestDifficulty::weight).sum();
-		if (totalWeight <= 0) return new QuestAssignment(definitions.get(0), QuestDifficulty.EASY);
-		int selectedWeight = random.nextInt(totalWeight);
-		QuestDifficulty selectedDifficulty = availableDifficulties.get(0);
-		for (QuestDifficulty difficulty : availableDifficulties) {
-			selectedWeight -= difficulty.weight();
-			if (selectedWeight < 0) {
-				selectedDifficulty = difficulty;
-				break;
+
+		List<QuestRarity> availableRarities = new ArrayList<>();
+		for (QuestRarity rarity : QuestRarity.values()) {
+			if (definitions.stream().anyMatch(definition -> definition.rarity() == rarity)) {
+				availableRarities.add(rarity);
 			}
 		}
-		return new QuestAssignment(definitions.get(random.nextInt(definitions.size())), selectedDifficulty);
+		QuestRarity selectedRarity = chooseRarity(random, availableRarities);
+		List<QuestDifficulty> availableDifficulties = List.of(QuestDifficulty.values());
+		QuestDifficulty selectedDifficulty = chooseDifficulty(random, availableDifficulties);
+		List<QuestDefinition> matchingDefinitions = definitions.stream()
+			.filter(definition -> definition.rarity() == selectedRarity)
+			.toList();
+		return new QuestAssignment(
+			matchingDefinitions.get(random.nextInt(matchingDefinitions.size())),
+			selectedDifficulty
+		);
+	}
+
+	private static QuestRarity chooseRarity(Random random, List<QuestRarity> availableRarities) {
+		int totalWeight = availableRarities.stream().mapToInt(QuestRarity::selectionWeight).sum();
+		if (totalWeight <= 0) return availableRarities.get(0);
+		int selectedWeight = random.nextInt(totalWeight);
+		for (QuestRarity rarity : availableRarities) {
+			selectedWeight -= rarity.selectionWeight();
+			if (selectedWeight < 0) return rarity;
+		}
+		return availableRarities.get(availableRarities.size() - 1);
+	}
+
+	private static QuestDifficulty chooseDifficulty(Random random, List<QuestDifficulty> availableDifficulties) {
+		int totalWeight = availableDifficulties.stream().mapToInt(QuestDifficulty::weight).sum();
+		if (totalWeight <= 0) return QuestDifficulty.EASY;
+		int selectedWeight = random.nextInt(totalWeight);
+		for (QuestDifficulty difficulty : availableDifficulties) {
+			selectedWeight -= difficulty.weight();
+			if (selectedWeight < 0) return difficulty;
+		}
+		return availableDifficulties.get(availableDifficulties.size() - 1);
 	}
 }

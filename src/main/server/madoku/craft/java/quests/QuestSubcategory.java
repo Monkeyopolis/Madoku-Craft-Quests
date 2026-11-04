@@ -5,7 +5,10 @@ import java.util.Locale;
 /** Standard quest objective types. Additional objective types can be added here later. */
 public enum QuestSubcategory {
 	BREAK("break", 1.0D),
-	COLLECT("collect", 1.0D);
+	COLLECT("collect", 1.0D),
+	SMELT("smelt", 1.4D),
+	STRIP("strip", 1.2D),
+	USE("use", 1.2D);
 
 	private final String id;
 	private final double rewardMultiplier;

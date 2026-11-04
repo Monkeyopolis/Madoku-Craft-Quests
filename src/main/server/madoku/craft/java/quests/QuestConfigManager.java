@@ -26,11 +26,13 @@ final class QuestConfigManager {
 	private static final String TITLE_KEY = "title-key";
 	private static final String DESCRIPTION_KEY = "description-key";
 	private static final String CATEGORY = "category";
+	private static final String RARITY = "rarity";
 	private static final String OBJECTIVES = "objectives";
 	private static final String OBJECTIVE_DESCRIPTION_KEY = "description-key";
 	private static final String SUBCATEGORY = "subcategory";
 	private static final String TARGET = "target";
 	private static final String TARGET_IDS = "ids";
+	private static final String DISPLAY_TARGET_IDS = "display-target-ids";
 	private static final String KIND = "kind";
 	private static final String REQUIRED = "required";
 	private static final String ENABLED = JSONTypeAPIManager.FIELD_ENABLED;
@@ -142,10 +144,22 @@ final class QuestConfigManager {
 
 	private static Map<String, JsonObject> buildStaticDefaults(String categoryId) {
 		if (!QuestCategoryIds.CORE.equals(categoryId)) return Map.of();
-		return Map.of(
-			CoreQuestRegistrar.LUMBERJACK, buildDefaultFile(categoryId, CoreQuestRegistrar.LUMBERJACK),
-			CoreQuestRegistrar.STONEWORKS, buildDefaultFile(categoryId, CoreQuestRegistrar.STONEWORKS),
-			CoreQuestRegistrar.COAL_MINER, buildDefaultFile(categoryId, CoreQuestRegistrar.COAL_MINER)
+		return Map.ofEntries(
+			Map.entry(CoreQuestRegistrar.LUMBERJACK, buildDefaultFile(categoryId, CoreQuestRegistrar.LUMBERJACK)),
+			Map.entry(CoreQuestRegistrar.STONEWORKS, buildDefaultFile(categoryId, CoreQuestRegistrar.STONEWORKS)),
+			Map.entry(CoreQuestRegistrar.DIRT_COLLECTOR, buildDefaultFile(categoryId, CoreQuestRegistrar.DIRT_COLLECTOR)),
+			Map.entry(CoreQuestRegistrar.COLLECTING_FLINT, buildDefaultFile(categoryId, CoreQuestRegistrar.COLLECTING_FLINT)),
+			Map.entry(CoreQuestRegistrar.COAL_MINER, buildDefaultFile(categoryId, CoreQuestRegistrar.COAL_MINER)),
+			Map.entry(CoreQuestRegistrar.DIAMONDS, buildDefaultFile(categoryId, CoreQuestRegistrar.DIAMONDS)),
+			Map.entry(CoreQuestRegistrar.OBSIDIAN, buildDefaultFile(categoryId, CoreQuestRegistrar.OBSIDIAN)),
+			Map.entry(CoreQuestRegistrar.FLAMING_HOT, buildDefaultFile(categoryId, CoreQuestRegistrar.FLAMING_HOT)),
+			Map.entry(CoreQuestRegistrar.GLASS_MAKER, buildDefaultFile(categoryId, CoreQuestRegistrar.GLASS_MAKER)),
+			Map.entry(CoreQuestRegistrar.SHINY_GOLD, buildDefaultFile(categoryId, CoreQuestRegistrar.SHINY_GOLD)),
+			Map.entry(CoreQuestRegistrar.STURDY_IRON, buildDefaultFile(categoryId, CoreQuestRegistrar.STURDY_IRON)),
+			Map.entry(CoreQuestRegistrar.COPPER_SPECIALIST, buildDefaultFile(categoryId, CoreQuestRegistrar.COPPER_SPECIALIST)),
+			Map.entry(CoreQuestRegistrar.ORE_SMELTER, buildDefaultFile(categoryId, CoreQuestRegistrar.ORE_SMELTER)),
+			Map.entry(CoreQuestRegistrar.STONE_VARIETY, buildDefaultFile(categoryId, CoreQuestRegistrar.STONE_VARIETY)),
+			Map.entry(CoreQuestRegistrar.PROCESSING_LOGS, buildDefaultFile(categoryId, CoreQuestRegistrar.PROCESSING_LOGS))
 		);
 	}
 
@@ -162,6 +176,7 @@ final class QuestConfigManager {
 			"menu.madoku-craft.quests." + normalizedId,
 			"menu.madoku-craft.quests." + normalizedId + ".description",
 			categoryId,
+			QuestRarity.COMMON.id(),
 			List.of(QuestObjective.collects(QuestTarget.id("minecraft:air"), 1))
 		);
 	}
@@ -172,6 +187,7 @@ final class QuestConfigManager {
 			definition.titleKey(),
 			definition.descriptionKey(),
 			definition.categoryId(),
+			definition.rarity().id(),
 			definition.objectives()
 		);
 	}
@@ -181,6 +197,7 @@ final class QuestConfigManager {
 		String titleKey,
 		String descriptionKey,
 		String categoryId,
+		String rarity,
 		List<?> objectives
 	) {
 		JsonObject root = new JsonObject();
@@ -189,6 +206,7 @@ final class QuestConfigManager {
 		quest.addProperty(TITLE_KEY, titleKey);
 		quest.addProperty(DESCRIPTION_KEY, descriptionKey);
 		quest.addProperty(CATEGORY, categoryId);
+		quest.addProperty(RARITY, rarity);
 		JsonArray objectiveArray = new JsonArray();
 		for (Object value : objectives) {
 			JsonObject objective = new JsonObject();
@@ -196,6 +214,11 @@ final class QuestConfigManager {
 				objective.addProperty(SUBCATEGORY, questObjective.subcategory().id());
 				if (!questObjective.descriptionKey().isBlank()) objective.addProperty(OBJECTIVE_DESCRIPTION_KEY, questObjective.descriptionKey());
 				objective.add(TARGET, targetJson(questObjective.target()));
+				if (!questObjective.displayTargetIds().equals(questObjective.target().ids())) {
+					JsonArray displayTargetIds = new JsonArray();
+					for (String targetId : questObjective.displayTargetIds()) displayTargetIds.add(targetId);
+					objective.add(DISPLAY_TARGET_IDS, displayTargetIds);
+				}
 				objective.addProperty(REQUIRED, questObjective.requiredCount());
 			}
 			objectiveArray.add(objective);
@@ -227,8 +250,13 @@ final class QuestConfigManager {
 		String titleKey = readString(quest, TITLE_KEY, "");
 		String descriptionKey = readString(quest, DESCRIPTION_KEY, "");
 		String configuredCategory = normalizeId(readString(quest, CATEGORY, categoryId));
+		QuestRarity rarity = QuestRarity.fromId(readString(quest, RARITY, QuestRarity.COMMON.id()));
 		if (id.isBlank() || titleKey.isBlank() || descriptionKey.isBlank() || !categoryId.equals(configuredCategory)) {
 			LOGGER.warn("Skipping invalid quest file '{}' in '{}'.", fileKey, categoryId);
+			return null;
+		}
+		if (rarity == null) {
+			LOGGER.warn("Skipping quest '{}' because rarity is invalid.", id);
 			return null;
 		}
 
@@ -247,7 +275,7 @@ final class QuestConfigManager {
 			objectives.add(objective);
 		}
 		try {
-			return new QuestDefinition(id, titleKey, descriptionKey, categoryId, objectives);
+			return new QuestDefinition(id, titleKey, descriptionKey, categoryId, rarity, objectives);
 		} catch (IllegalArgumentException exception) {
 			LOGGER.warn("Skipping invalid quest definition '{}'.", id, exception);
 			return null;
@@ -263,6 +291,7 @@ final class QuestConfigManager {
 		QuestTarget.Kind kind = QuestTarget.Kind.fromId(readString(target, KIND, ""));
 		String targetId = readString(target, ID, "");
 		List<String> targetIds = readStrings(target, TARGET_IDS);
+		List<String> displayTargetIds = readStrings(source, DISPLAY_TARGET_IDS);
 		int required = readInt(source, REQUIRED, 0);
 		if (subcategory == null || kind == null || (kind != QuestTarget.Kind.ANY_OF && targetId.isBlank())
 			|| (kind == QuestTarget.Kind.ANY_OF && targetIds.isEmpty()) || required < 1) return null;
@@ -270,7 +299,7 @@ final class QuestConfigManager {
 			QuestTarget questTarget = kind == QuestTarget.Kind.ANY_OF
 				? QuestTarget.anyOf(targetIds)
 				: new QuestTarget(kind, targetId);
-			return new QuestObjective(subcategory, questTarget, required, descriptionKey);
+			return new QuestObjective(subcategory, questTarget, required, descriptionKey, displayTargetIds);
 		} catch (IllegalArgumentException exception) {
 			return null;
 		}

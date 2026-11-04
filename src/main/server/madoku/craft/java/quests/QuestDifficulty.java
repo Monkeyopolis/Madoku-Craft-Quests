@@ -2,9 +2,9 @@ package madoku.craft.java.quests;
 
 /** Standard difficulty tiers and their relative selection weights. */
 public enum QuestDifficulty {
-	EASY("easy", 60, 1, 80, 200, 4, "I"),
-	NORMAL("normal", 30, 2, 160, 400, 8, "II"),
-	HARD("hard", 10, 4, 320, 800, 20, "III");
+	EASY("easy", 60, 1, 60, 150, 4, "I"),
+	NORMAL("normal", 30, 2, 120, 300, 8, "II"),
+	HARD("hard", 10, 3, 180, 450, 12, "III");
 
 	private final String id;
 	private final int weight;
