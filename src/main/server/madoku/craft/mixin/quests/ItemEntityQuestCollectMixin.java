@@ -1,5 +1,6 @@
 package madoku.craft.mixin.quests;
 
+import madoku.craft.java.core.item.ItemEntityDropAPIManager;
 import madoku.craft.java.quests.QuestsStateBridge;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -31,8 +32,13 @@ public abstract class ItemEntityQuestCollectMixin {
 		Item pickedUpItem,
 		int pickedUpAmount
 	) {
+		ItemEntity itemEntity = (ItemEntity) (Object) this;
 		if (player instanceof ServerPlayer serverPlayer) {
-			QuestsStateBridge.onItemCollected(serverPlayer, pickedUpItem, pickedUpAmount);
+			int excludedAmount = ItemEntityDropAPIManager.consumePlayerAttributedAmount(itemEntity, pickedUpAmount);
+			int collectedAmount = pickedUpAmount - excludedAmount;
+			if (collectedAmount > 0) {
+				QuestsStateBridge.onItemCollected(serverPlayer, pickedUpItem, collectedAmount);
+			}
 		}
 	}
 }

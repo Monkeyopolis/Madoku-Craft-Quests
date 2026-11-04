@@ -15,8 +15,10 @@ import net.minecraft.resources.Identifier;
 /** Placeholder Quests screen with the final category, viewport, and scroll layout. */
 public final class QuestsMenuScreen extends Screen {
 	private static final Identifier CONTAINER_TEXTURE = texture("madoku-menu/quests-menu/quests-menu-container.png");
-	private static final Identifier QUEST_ENTRY_TEXTURE = texture("madoku-menu/quests-menu/quest-entry.png");
-	private static final Identifier QUEST_ENTRY_SELECTED_TEXTURE = texture("madoku-menu/quests-menu/quest-entry-selected.png");
+	private static final Identifier QUEST_ENTRY_COMPACT_TEXTURE = texture("madoku-menu/quests-menu/quest-entry-compact.png");
+	private static final Identifier QUEST_ENTRY_COMPACT_SELECTED_TEXTURE = texture("madoku-menu/quests-menu/quest-entry-compact-selected.png");
+	private static final Identifier QUEST_ENTRY_FULL_TEXTURE = texture("madoku-menu/quests-menu/quest-entry-full.png");
+	private static final Identifier QUEST_ENTRY_FULL_SELECTED_TEXTURE = texture("madoku-menu/quests-menu/quest-entry-full-selected.png");
 	private static final Identifier CATEGORY_SLOT_TEXTURE = texture("shared-ui/category-slot.png");
 	private static final Identifier CATEGORY_SLOT_SELECTED_TEXTURE = texture("shared-ui/category-slot-selected.png");
 	private static final Identifier COMPLETED_BUTTON_TEXTURE = texture("shared-ui/completed-button.png");
@@ -52,15 +54,14 @@ public final class QuestsMenuScreen extends Screen {
 	private static final int QUEST_VIEWPORT_WIDTH = 112;
 	private static final int QUEST_VIEWPORT_HEIGHT = 128;
 	private static final int QUEST_ENTRY_WIDTH = 112;
-	private static final int QUEST_ENTRY_HEIGHT = 40;
+	private static final int QUEST_ENTRY_COMPACT_HEIGHT = 40;
+	private static final int QUEST_ENTRY_FULL_HEIGHT = 60;
 	private static final int QUEST_ENTRY_GAP = 4;
 	private static final int QUEST_TEXT_X = 9;
 	private static final int QUEST_TEXT_MAX_WIDTH = 78;
-	private static final int QUEST_DESCRIPTION_Y = 17;
-	private static final int QUEST_PROGRESS_GAP = 4;
-	private static final int QUEST_PROGRESS_BAR_GAP = 2;
 	private static final int QUEST_STATUS_X = 93;
-	private static final int QUEST_STATUS_Y = 14;
+	private static final int QUEST_STATUS_COMPACT_Y = 14;
+	private static final int QUEST_STATUS_FULL_Y = 24;
 	private static final int SCROLLER_X = 158;
 	private static final int SCROLLER_Y = 24;
 	private static final int SCROLLER_WIDTH = 10;
@@ -72,7 +73,7 @@ public final class QuestsMenuScreen extends Screen {
 	private static final float QUEST_FOOTER_TEXT_SCALE = 0.7F;
 	private static final int SCROLL_STEP = 16;
 	private static final int TEXT_COLOR = 0xFF404040;
-	private static final float QUEST_TEXT_SCALE = 0.7F;
+	private static final float QUEST_TITLE_TEXT_SCALE = 0.7F;
 
 	private List<MadokuQuestsClient.QuestCategory> categories = List.of();
 	private int selectedCategory;
@@ -294,65 +295,78 @@ public final class QuestsMenuScreen extends Screen {
 			String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
 			MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
 			boolean selected = questEntry != null && MadokuQuestsClient.isQuestSelected(questEntry.id());
+			int entryHeight = questEntryHeight(questEntry);
+			boolean fullEntry = entryHeight == QUEST_ENTRY_FULL_HEIGHT;
 			guiGraphics.blit(
 				RenderPipelines.GUI_TEXTURED,
-				selected ? QUEST_ENTRY_SELECTED_TEXTURE : QUEST_ENTRY_TEXTURE,
+				selected
+					? (fullEntry ? QUEST_ENTRY_FULL_SELECTED_TEXTURE : QUEST_ENTRY_COMPACT_SELECTED_TEXTURE)
+					: (fullEntry ? QUEST_ENTRY_FULL_TEXTURE : QUEST_ENTRY_COMPACT_TEXTURE),
 				entry.x(),
 				entry.y(),
 				0.0F,
 				0.0F,
 				QUEST_ENTRY_WIDTH,
-				QUEST_ENTRY_HEIGHT,
+				entryHeight,
 				QUEST_ENTRY_WIDTH,
-				QUEST_ENTRY_HEIGHT
+				entryHeight
 			);
 			String questTitle = MadokuQuestsClient.questTitle(
 				selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "",
 				index
 			);
-			String questDescription = MadokuQuestsClient.questDescription(categoryId, index);
-			String questProgress = MadokuQuestsClient.questProgress(categoryId, index);
-			float descriptionScale = fittedTextScale(questDescription, QUEST_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
-			int descriptionY = entry.y() + QUEST_DESCRIPTION_Y;
-			drawFittedLeftText(
+			float titleScale = fittedTextScale(questTitle, QUEST_TITLE_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
+			drawScaledCenteredText(
 				guiGraphics,
 				questTitle,
-				entry.x() + QUEST_TEXT_X,
-				entry.y() + 6,
-				QUEST_TEXT_SCALE,
-				QUEST_TEXT_MAX_WIDTH,
-				TEXT_COLOR
-			);
-			drawFittedLeftText(
-				guiGraphics,
-				questDescription,
-				entry.x() + QUEST_TEXT_X,
-				descriptionY,
-				QUEST_TEXT_SCALE,
-				QUEST_TEXT_MAX_WIDTH,
-				TEXT_COLOR
-			);
-			drawFittedLeftText(
-				guiGraphics,
-				questProgress,
-				entry.x() + QUEST_TEXT_X,
-				descriptionY + scaledTextHeight(descriptionScale) + QUEST_PROGRESS_GAP,
-				QUEST_TEXT_SCALE,
-				QUEST_TEXT_MAX_WIDTH,
+				entry.x() + QUEST_TEXT_X + QUEST_TEXT_MAX_WIDTH / 2,
+				entry.y() + 5,
+				titleScale,
 				TEXT_COLOR
 			);
 			if (questEntry != null) {
-				float progressScale = fittedTextScale(questProgress, QUEST_TEXT_SCALE, QUEST_TEXT_MAX_WIDTH);
-				QuestProgressRenderer.draw(
-					guiGraphics,
-					entry.x() + QUEST_TEXT_X,
-					descriptionY + scaledTextHeight(descriptionScale) + QUEST_PROGRESS_GAP
-						+ scaledTextHeight(progressScale) + QUEST_PROGRESS_BAR_GAP,
-					QuestProgressRenderer.BAR_WIDTH,
-					QuestProgressRenderer.BAR_HEIGHT,
-					questEntry.progress(),
-					questEntry.required()
-				);
+				List<MadokuQuestsClient.QuestObjectiveEntry> objectives = MadokuQuestsClient.questObjectives(categoryId, index);
+				int objectiveCount = Math.min(3, objectives.size());
+				float objectiveTextScale = objectiveTextScale(objectiveCount);
+				float progressTextScale = objectiveProgressTextScale(objectiveCount);
+				int barWidth = objectiveBarWidth(objectiveCount);
+				int barHeight = objectiveBarHeight(objectiveCount);
+				int rowY = entry.y() + objectiveStartY(objectiveCount);
+				for (int objectiveIndex = 0; objectiveIndex < objectiveCount; objectiveIndex++) {
+					MadokuQuestsClient.QuestObjectiveEntry objective = objectives.get(objectiveIndex);
+					int objectiveY = rowY + objectiveIndex * objectiveRowHeight(objectiveCount);
+					String objectiveDescription = MadokuQuestsClient.objectiveDescription(objective);
+					float fittedObjectiveScale = fittedTextScale(objectiveDescription, objectiveTextScale, barWidth);
+					drawFittedLeftText(
+						guiGraphics,
+						objectiveDescription,
+						entry.x() + QUEST_TEXT_X,
+						objectiveY,
+						fittedObjectiveScale,
+						barWidth,
+						TEXT_COLOR
+					);
+					int progressY = objectiveY + scaledTextHeight(objectiveTextScale) + 2;
+					QuestProgressRenderer.draw(
+						guiGraphics,
+						entry.x() + QUEST_TEXT_X,
+						progressY,
+						barWidth,
+						barHeight,
+						objective.progress(),
+						objective.required()
+					);
+					String progress = objective.progress() + "/" + objective.required();
+					float progressScale = progressTextScale;
+					drawProgressCount(
+						guiGraphics,
+						progress,
+						entry.x() + QUEST_TEXT_X + barWidth / 2,
+						progressY,
+						progressScale,
+						TEXT_COLOR
+					);
+				}
 			}
 			guiGraphics.blit(
 				RenderPipelines.GUI_TEXTURED,
@@ -361,7 +375,7 @@ public final class QuestsMenuScreen extends Screen {
 					index
 				) ? COMPLETED_BUTTON_TEXTURE : INCOMPLETE_BUTTON_TEXTURE,
 				entry.x() + QUEST_STATUS_X,
-				entry.y() + QUEST_STATUS_Y,
+				entry.y() + statusY(entry),
 				0.0F,
 				0.0F,
 				EXIT_SIZE,
@@ -427,16 +441,33 @@ public final class QuestsMenuScreen extends Screen {
 	}
 
 	private Bounds questEntryBounds(int panelX, int panelY, int index, int currentScrollOffset) {
+		String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
+		int entryY = panelY + QUEST_VIEWPORT_Y - currentScrollOffset;
+		for (int previous = 0; previous < index; previous++) {
+			entryY += questEntryHeight(MadokuQuestsClient.questEntry(categoryId, previous)) + QUEST_ENTRY_GAP;
+		}
+		MadokuQuestsClient.QuestEntry questEntry = MadokuQuestsClient.questEntry(categoryId, index);
+		int entryHeight = questEntryHeight(questEntry);
 		return new Bounds(
 			panelX + QUEST_VIEWPORT_X,
-			panelY + QUEST_VIEWPORT_Y + index * (QUEST_ENTRY_HEIGHT + QUEST_ENTRY_GAP) - currentScrollOffset,
+			entryY,
 			QUEST_ENTRY_WIDTH,
-			QUEST_ENTRY_HEIGHT
+			entryHeight
 		);
 	}
 
 	private Bounds statusBounds(Bounds entry) {
-		return new Bounds(entry.x() + QUEST_STATUS_X, entry.y() + QUEST_STATUS_Y, EXIT_SIZE, EXIT_SIZE);
+		return new Bounds(entry.x() + QUEST_STATUS_X, entry.y() + statusY(entry), EXIT_SIZE, EXIT_SIZE);
+	}
+
+	private int statusY(Bounds entry) {
+		return entry.height() == QUEST_ENTRY_FULL_HEIGHT ? QUEST_STATUS_FULL_Y : QUEST_STATUS_COMPACT_Y;
+	}
+
+	private int questEntryHeight(MadokuQuestsClient.QuestEntry entry) {
+		return entry != null && entry.objectives().size() > 1
+			? QUEST_ENTRY_FULL_HEIGHT
+			: QUEST_ENTRY_COMPACT_HEIGHT;
 	}
 
 	private Bounds questViewportBounds(int panelX, int panelY) {
@@ -453,8 +484,36 @@ public final class QuestsMenuScreen extends Screen {
 	private int maxScrollOffset() {
 		int questCount = currentQuestCount();
 		if (questCount <= 0) return 0;
-		int contentHeight = questCount * QUEST_ENTRY_HEIGHT + (questCount - 1) * QUEST_ENTRY_GAP;
+		String categoryId = selectedCategory < categories.size() ? categories.get(selectedCategory).id() : "";
+		int contentHeight = -QUEST_ENTRY_GAP;
+		for (int index = 0; index < questCount; index++) {
+			contentHeight += questEntryHeight(MadokuQuestsClient.questEntry(categoryId, index)) + QUEST_ENTRY_GAP;
+		}
 		return Math.max(0, contentHeight - QUEST_VIEWPORT_HEIGHT);
+	}
+
+	private float objectiveTextScale(int objectiveCount) {
+		return 0.7F;
+	}
+
+	private float objectiveProgressTextScale(int objectiveCount) {
+		return 0.55F;
+	}
+
+	private int objectiveBarHeight(int objectiveCount) {
+		return QuestProgressRenderer.BAR_HEIGHT;
+	}
+
+	private int objectiveBarWidth(int objectiveCount) {
+		return QUEST_TEXT_MAX_WIDTH;
+	}
+
+	private int objectiveStartY(int objectiveCount) {
+		return objectiveCount <= 1 ? 17 : 16;
+	}
+
+	private int objectiveRowHeight(int objectiveCount) {
+		return objectiveCount <= 1 ? 12 : 14;
 	}
 
 	private int currentQuestCount() {
@@ -533,6 +592,15 @@ public final class QuestsMenuScreen extends Screen {
 		if (text == null || text.isEmpty()) return;
 		int startX = Math.round(centerX - (this.font.width(text) * scale / 2.0F));
 		drawScaledLeftText(guiGraphics, text, startX, y, scale, color);
+	}
+
+	private void drawProgressCount(GuiGraphicsExtractor guiGraphics, String text, int centerX, int y, float scale, int color) {
+		if (text == null || text.isEmpty()) return;
+		guiGraphics.pose().pushMatrix();
+		guiGraphics.pose().translate(centerX, y);
+		guiGraphics.pose().scale(scale, scale);
+		guiGraphics.text(this.font, text, Math.round(-this.font.width(text) / 2.0F), 0, color, false);
+		guiGraphics.pose().popMatrix();
 	}
 
 	private void drawFittedRightText(

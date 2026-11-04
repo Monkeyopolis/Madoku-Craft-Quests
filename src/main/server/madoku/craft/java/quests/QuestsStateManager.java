@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import madoku.craft.java.core.data.DataSaveParticipant;
 import madoku.craft.java.core.data.DataSaveParticipantAPIManager;
+import madoku.craft.java.core.data.ChunkDataAPIManager;
 import madoku.craft.java.core.data.PlayerDataAPIManager;
 import madoku.craft.java.core.module.MadokuModuleIds;
 import madoku.craft.java.core.module.MadokuModuleLifecycleManager;
@@ -19,9 +20,11 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.TagKey;
@@ -56,6 +59,13 @@ final class QuestsStateManager {
 	private static final String DIFFICULTY = "difficulty";
 	private static final String TITLE_KEY = "title-key";
 	private static final String DESCRIPTION_KEY = "description-key";
+	private static final String OBJECTIVES = "objectives";
+	private static final String SUBCATEGORY = "subcategory";
+	private static final String OBJECTIVE_DESCRIPTION_KEY = "description-key";
+	private static final String TARGET_KIND = "target-kind";
+	private static final String TARGET_ID = "target-id";
+	private static final String PROGRESS_VALUE = "progress";
+	private static final String REQUIRED_VALUE = "required";
 	private static final String PROGRESS = "progress";
 	private static final int MAX_QUESTS_PER_CATEGORY = 7;
 	private static final long QUEST_INTERVAL_WORLD_TICKS = TimeAPIManager.MINECRAFT_TICKS_PER_CYCLE;
@@ -102,7 +112,9 @@ final class QuestsStateManager {
 			(payload, context) -> handleTurnIn(context.player(), payload.questId())
 		);
 		PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
-			if (player instanceof ServerPlayer serverPlayer) onBlockBroken(serverPlayer, state);
+			if (world instanceof ServerLevel level && player instanceof ServerPlayer serverPlayer) {
+				onBlockBroken(serverPlayer, level, pos, state);
+			}
 		});
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> prepareAndSync(handler.player, server));
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
@@ -189,61 +201,20 @@ final class QuestsStateManager {
 	}
 
 	static void onItemCollected(ServerPlayer player, Item item, int amount) {
-		if (player == null) {
-			LOGGER.info("[Quests] Item collection hook received without a player.");
-			return;
-		}
-		if (item == null || amount <= 0) {
-			LOGGER.info(
-				"[Quests] Item collection hook received invalid data player={} item={} amount={}",
-				player.getGameProfile().name(),
-				item,
-				amount
-			);
-			return;
-		}
-		LOGGER.info(
-			"[Quests] Item collected player={} item={} amount={}",
-			player.getGameProfile().name(),
-			BuiltInRegistries.ITEM.getKey(item),
-			amount
-		);
+		if (player == null || item == null || amount <= 0) return;
 		PlayerQuestState state = stateFor(player);
 		boolean changed = state.addCollected(item, amount);
-		LOGGER.info(
-			"[Quests] Item collection objective result player={} item={} changed={} state={}",
-			player.getGameProfile().name(),
-			BuiltInRegistries.ITEM.getKey(item),
-			changed,
-			describeState(state)
-		);
 		if (changed) markProgressChanged(player);
 	}
 
-	private static void onBlockBroken(ServerPlayer player, BlockState state) {
-		if (player == null || state == null) {
-			LOGGER.info("[Quests] Block break hook received incomplete data player={} state={}", player, state);
-			return;
-		}
-		LOGGER.info(
-			"[Quests] Block break received player={} block={} creative={}",
-			player.getGameProfile().name(),
-			BuiltInRegistries.BLOCK.getKey(state.getBlock()),
-			player.isCreative()
-		);
+	private static void onBlockBroken(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {
+		if (player == null || level == null || pos == null || state == null) return;
 		if (player.isCreative()) {
-			LOGGER.info("[Quests] Block break ignored because player={} is creative.", player.getGameProfile().name());
 			return;
 		}
+		if (ChunkDataAPIManager.isPlayerPlacedBlock(level, pos)) return;
 		PlayerQuestState questState = stateFor(player);
 		boolean changed = questState.addBroken(state);
-		LOGGER.info(
-			"[Quests] Block objective result player={} block={} changed={} state={}",
-			player.getGameProfile().name(),
-			BuiltInRegistries.BLOCK.getKey(state.getBlock()),
-			changed,
-			describeState(questState)
-		);
 		if (changed) markProgressChanged(player);
 	}
 
@@ -253,7 +224,7 @@ final class QuestsStateManager {
 		PlayerQuestState state = stateFor(player);
 		QuestRecord quest = state.quest(normalizedQuestId);
 		if (quest == null || !quest.isComplete()) return;
-		awardRewards(player, quest.difficulty());
+		awardRewards(player, quest);
 		player.level().playSound(
 			null,
 			player.getX(),
@@ -269,24 +240,37 @@ final class QuestsStateManager {
 		sendImmediately(player, state);
 	}
 
-	private static void awardRewards(ServerPlayer player, QuestDifficulty difficulty) {
-		if (player == null || difficulty == null) return;
-		player.giveExperiencePoints(difficulty.experienceReward());
-		QuestRewardAPIManager.addMadokuLevelsXp(player, difficulty.levelsXpReward());
-		int essence = difficulty.essenceReward();
+	private static void awardRewards(ServerPlayer player, QuestRecord quest) {
+		if (player == null || quest == null) return;
+		QuestDifficulty difficulty = quest.difficulty();
+		double rewardMultiplier = quest.rewardMultiplier();
+		int vanillaExperience = scaleDiscreteReward(difficulty.experienceReward(), rewardMultiplier);
+		int madokuLevelsExperience = scaleDiscreteReward(difficulty.levelsXpReward(), rewardMultiplier);
+		int essence = scaleDiscreteReward(difficulty.essenceReward(), rewardMultiplier);
+		player.giveExperiencePoints(vanillaExperience);
+		QuestRewardAPIManager.addMadokuLevelsXp(player, madokuLevelsExperience);
 		if (essence > 0) {
 			giveItemOrDrop(player, new ItemStack(EssenceManager.ESSENCE, essence));
 		}
 
+		String tableId = "quest-" + difficulty.id() + "-difficulty";
 		List<ItemStack> itemRewards = LootTableAPIManager.generateManagedLootForTable(
-			"quest-" + difficulty.id() + "-difficulty",
-			RandomSource.create()
+			tableId,
+			RandomSource.create(),
+			rewardMultiplier
 		);
 		for (ItemStack reward : itemRewards) {
 			if (reward != null && !reward.isEmpty()) {
 				giveItemOrDrop(player, reward);
 			}
 		}
+	}
+
+	private static int scaleDiscreteReward(int value, double multiplier) {
+		if (value <= 0) return 0;
+		if (!Double.isFinite(multiplier) || multiplier <= 0.0D) return 0;
+		long scaled = Math.round(value * multiplier);
+		return scaled >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) scaled;
 	}
 
 	private static void giveItemOrDrop(ServerPlayer player, ItemStack reward) {
@@ -305,7 +289,6 @@ final class QuestsStateManager {
 			persistState(player, state);
 			DIRTY_PERSISTENCE.remove(player.getUUID());
 		}
-		state.markSynchronized();
 		DIRTY_SYNCS.remove(player.getUUID());
 		scheduleNextAssignment(player, state);
 		send(player, state);
@@ -343,7 +326,6 @@ final class QuestsStateManager {
 			if (updateForCurrentWorldTime(player, state, currentWorldTime, server)) {
 				persistState(player, state);
 				DIRTY_PERSISTENCE.remove(player.getUUID());
-				state.markSynchronized();
 				send(player, state);
 				DIRTY_SYNCS.remove(player.getUUID());
 			}
@@ -368,7 +350,6 @@ final class QuestsStateManager {
 			if (updateForCurrentWorldTime(player, state, currentWorldTime, server)) {
 				persistState(player, state);
 				DIRTY_PERSISTENCE.remove(player.getUUID());
-				state.markSynchronized();
 				send(player, state);
 				DIRTY_SYNCS.remove(player.getUUID());
 			}
@@ -597,34 +578,52 @@ final class QuestsStateManager {
 			entry.addProperty("display-progress", quest.displayProgress());
 			entry.addProperty("display-required", quest.displayRequired());
 			entry.addProperty("complete", quest.isComplete());
+			JsonArray objectives = new JsonArray();
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				JsonObject objectiveEntry = new JsonObject();
+				objectiveEntry.addProperty(SUBCATEGORY, objective.subcategory().id());
+				objectiveEntry.addProperty(OBJECTIVE_DESCRIPTION_KEY, objective.descriptionKey());
+				objectiveEntry.addProperty(TARGET_KIND, objective.target().kind().name().toLowerCase(Locale.ROOT));
+				objectiveEntry.addProperty(TARGET_ID, objective.target().id());
+				objectiveEntry.addProperty(PROGRESS_VALUE, quest.progress()[index]);
+				objectiveEntry.addProperty(REQUIRED_VALUE, quest.requiredCount(definition, index));
+				objectives.add(objectiveEntry);
+			}
+			entry.add(OBJECTIVES, objectives);
 			encoded.add(entry);
 		}
 		return encoded.toString();
 	}
 
-	private static String describeState(PlayerQuestState state) {
-		if (state == null) return "null";
-		List<String> quests = new ArrayList<>();
-		for (QuestRecord quest : state.quests()) quests.add(quest.describe());
-		return quests.toString();
-	}
-
 	private static boolean matchesBlock(QuestTarget target, BlockState state) {
-		Identifier identifier = Identifier.tryParse(target.id());
-		if (identifier == null) return false;
 		if (target.kind() == QuestTarget.Kind.TAG) {
-			return state.is(TagKey.create(Registries.BLOCK, identifier));
+			Identifier identifier = Identifier.tryParse(target.id());
+			return identifier != null && state.is(TagKey.create(Registries.BLOCK, identifier));
 		}
-		return identifier.equals(BuiltInRegistries.BLOCK.getKey(state.getBlock()));
+		Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+		if (blockId == null) return false;
+		for (String targetId : target.ids()) {
+			Identifier identifier = Identifier.tryParse(targetId);
+			if (identifier != null && identifier.equals(blockId)) return true;
+		}
+		return false;
 	}
 
 	private static boolean matchesItem(QuestTarget target, Item item) {
-		Identifier identifier = Identifier.tryParse(target.id());
-		if (identifier == null || item == null) return false;
+		if (item == null) return false;
 		if (target.kind() == QuestTarget.Kind.TAG) {
+			Identifier identifier = Identifier.tryParse(target.id());
+			if (identifier == null) return false;
 			return BuiltInRegistries.ITEM.wrapAsHolder(item).is(TagKey.create(Registries.ITEM, identifier));
 		}
-		return identifier.equals(BuiltInRegistries.ITEM.getKey(item));
+		Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
+		if (itemId == null) return false;
+		for (String targetId : target.ids()) {
+			Identifier identifier = Identifier.tryParse(targetId);
+			if (identifier != null && identifier.equals(itemId)) return true;
+		}
+		return false;
 	}
 
 	private static void scheduleNextAssignment(ServerPlayer player, PlayerQuestState state) {
@@ -701,17 +700,24 @@ final class QuestsStateManager {
 			return definitionId;
 		}
 
-		private String describe() {
-			return definitionId + "[" + difficulty.id() + "]=" + displayProgress() + "/" + displayRequired()
-				+ " objectives=" + java.util.Arrays.toString(progress);
-		}
-
 		private int[] progress() {
 			return progress;
 		}
 
 		private QuestDifficulty difficulty() {
 			return difficulty;
+		}
+
+		private double rewardMultiplier() {
+			QuestDefinition definition = definition();
+			if (definition == null) return 1.0D;
+			double multiplier = 1.0D;
+			for (QuestObjective objective : definition.objectives()) {
+				if (objective != null && objective.subcategory() != null) {
+					multiplier = Math.max(multiplier, objective.subcategory().rewardMultiplier());
+				}
+			}
+			return multiplier;
 		}
 
 		private int requiredCount(QuestDefinition definition, int index) {
@@ -727,16 +733,6 @@ final class QuestsStateManager {
 				if (objective.subcategory() != QuestSubcategory.BREAK) continue;
 				int required = requiredCount(definition, index);
 				boolean matches = matchesBlock(objective.target(), state);
-				LOGGER.info(
-					"[Quests] Break objective check quest={} difficulty={} target={} block={} matched={} progress={}/{}",
-					definitionId,
-					difficulty.id(),
-					objective.target().id(),
-					BuiltInRegistries.BLOCK.getKey(state.getBlock()),
-					matches,
-					progress[index],
-					required
-				);
 				if (progress[index] >= required || !matches) continue;
 				progress[index]++;
 				changed = true;
@@ -753,17 +749,6 @@ final class QuestsStateManager {
 				if (objective.subcategory() != QuestSubcategory.COLLECT) continue;
 				int required = requiredCount(definition, index);
 				boolean matches = matchesItem(objective.target(), item);
-				LOGGER.info(
-					"[Quests] Collect objective check quest={} difficulty={} target={} item={} matched={} progress={}/{} amount={}",
-					definitionId,
-					difficulty.id(),
-					objective.target().id(),
-					BuiltInRegistries.ITEM.getKey(item),
-					matches,
-					progress[index],
-					required,
-					amount
-				);
 				if (progress[index] >= required || !matches) continue;
 				int next = (int) Math.min(required, (long) progress[index] + amount);
 				changed |= next != progress[index];
@@ -814,7 +799,6 @@ final class QuestsStateManager {
 		private long lastAssignedWorldTime;
 		private final List<QuestRecord> quests;
 		private final Map<String, QuestRecord> questsById;
-		private boolean synchronizedState;
 
 		private PlayerQuestState(long lastAssignedWorldTime, List<QuestRecord> quests) {
 			this.lastAssignedWorldTime = lastAssignedWorldTime;
@@ -840,8 +824,6 @@ final class QuestsStateManager {
 		private Set<String> definitionIds() {
 			return new HashSet<>(questsById.keySet());
 		}
-		private boolean needsInitialSync() { return !synchronizedState; }
-		private void markSynchronized() { synchronizedState = true; }
 
 		private boolean addBroken(BlockState state) {
 			boolean changed = false;

@@ -4,17 +4,23 @@ import java.util.Locale;
 
 /** Standard quest objective types. Additional objective types can be added here later. */
 public enum QuestSubcategory {
-	BREAK("break"),
-	COLLECT("collect");
+	BREAK("break", 1.0D),
+	COLLECT("collect", 1.0D);
 
 	private final String id;
+	private final double rewardMultiplier;
 
-	QuestSubcategory(String id) {
+	QuestSubcategory(String id, double rewardMultiplier) {
 		this.id = id;
+		this.rewardMultiplier = rewardMultiplier;
 	}
 
 	public String id() {
 		return id;
+	}
+
+	public double rewardMultiplier() {
+		return rewardMultiplier;
 	}
 
 	public static QuestSubcategory fromId(String id) {

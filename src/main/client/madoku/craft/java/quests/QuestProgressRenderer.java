@@ -6,7 +6,7 @@ import net.minecraft.client.renderer.RenderPipelines;
 /** Draws the quest progress indicator directly as colored GUI rectangles. */
 final class QuestProgressRenderer {
 	static final int BAR_WIDTH = 78;
-	static final int BAR_HEIGHT = 2;
+	static final int BAR_HEIGHT = 4;
 	private static final int INCOMPLETE_COLOR = 0xFFD42B2B;
 	private static final int COMPLETE_COLOR = 0xFF3EAC4A;
 

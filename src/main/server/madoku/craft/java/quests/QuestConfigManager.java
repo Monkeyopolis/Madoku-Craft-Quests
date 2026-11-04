@@ -27,8 +27,10 @@ final class QuestConfigManager {
 	private static final String DESCRIPTION_KEY = "description-key";
 	private static final String CATEGORY = "category";
 	private static final String OBJECTIVES = "objectives";
+	private static final String OBJECTIVE_DESCRIPTION_KEY = "description-key";
 	private static final String SUBCATEGORY = "subcategory";
 	private static final String TARGET = "target";
+	private static final String TARGET_IDS = "ids";
 	private static final String KIND = "kind";
 	private static final String REQUIRED = "required";
 	private static final String ENABLED = JSONTypeAPIManager.FIELD_ENABLED;
@@ -140,7 +142,11 @@ final class QuestConfigManager {
 
 	private static Map<String, JsonObject> buildStaticDefaults(String categoryId) {
 		if (!QuestCategoryIds.CORE.equals(categoryId)) return Map.of();
-		return Map.of(CoreQuestRegistrar.LUMBERJACK, buildDefaultFile(categoryId, CoreQuestRegistrar.LUMBERJACK));
+		return Map.of(
+			CoreQuestRegistrar.LUMBERJACK, buildDefaultFile(categoryId, CoreQuestRegistrar.LUMBERJACK),
+			CoreQuestRegistrar.STONEWORKS, buildDefaultFile(categoryId, CoreQuestRegistrar.STONEWORKS),
+			CoreQuestRegistrar.COAL_MINER, buildDefaultFile(categoryId, CoreQuestRegistrar.COAL_MINER)
+		);
 	}
 
 	private static JsonObject buildDefaultFile(String categoryId, String fileKey) {
@@ -161,17 +167,13 @@ final class QuestConfigManager {
 	}
 
 	private static JsonObject toJson(QuestDefinition definition) {
-		List<QuestObjective> objectives = definition.objectives();
-		List<ObjectiveData> objectiveData = new ArrayList<>();
-		for (QuestObjective objective : objectives) {
-			objectiveData.add(new ObjectiveData(
-				objective.subcategory().id(),
-				objective.target().kind().name().toLowerCase(Locale.ROOT),
-				objective.target().id(),
-				objective.requiredCount()
-			));
-		}
-		return questFile(definition.id(), definition.titleKey(), definition.descriptionKey(), definition.categoryId(), objectiveData);
+		return questFile(
+			definition.id(),
+			definition.titleKey(),
+			definition.descriptionKey(),
+			definition.categoryId(),
+			definition.objectives()
+		);
 	}
 
 	private static JsonObject questFile(
@@ -192,15 +194,9 @@ final class QuestConfigManager {
 			JsonObject objective = new JsonObject();
 			if (value instanceof QuestObjective questObjective) {
 				objective.addProperty(SUBCATEGORY, questObjective.subcategory().id());
+				if (!questObjective.descriptionKey().isBlank()) objective.addProperty(OBJECTIVE_DESCRIPTION_KEY, questObjective.descriptionKey());
 				objective.add(TARGET, targetJson(questObjective.target()));
 				objective.addProperty(REQUIRED, questObjective.requiredCount());
-			} else if (value instanceof ObjectiveData data) {
-				objective.addProperty(SUBCATEGORY, data.subcategory());
-				JsonObject target = new JsonObject();
-				target.addProperty(KIND, data.kind());
-				target.addProperty(ID, data.targetId());
-				objective.add(TARGET, target);
-				objective.addProperty(REQUIRED, data.required());
 			}
 			objectiveArray.add(objective);
 		}
@@ -211,8 +207,17 @@ final class QuestConfigManager {
 
 	private static JsonObject targetJson(QuestTarget target) {
 		JsonObject json = new JsonObject();
-		json.addProperty(KIND, target.kind().name().toLowerCase(Locale.ROOT));
-		json.addProperty(ID, target.id());
+		String kindId = target.kind() == QuestTarget.Kind.ANY_OF
+			? "any-of"
+			: target.kind().name().toLowerCase(Locale.ROOT);
+		json.addProperty(KIND, kindId);
+		if (target.kind() == QuestTarget.Kind.ANY_OF) {
+			JsonArray ids = new JsonArray();
+			for (String id : target.ids()) ids.add(id);
+			json.add(TARGET_IDS, ids);
+		} else {
+			json.addProperty(ID, target.id());
+		}
 		return json;
 	}
 
@@ -253,16 +258,35 @@ final class QuestConfigManager {
 		if (element == null || !element.isJsonObject()) return null;
 		JsonObject source = element.getAsJsonObject();
 		QuestSubcategory subcategory = QuestSubcategory.fromId(readString(source, SUBCATEGORY, ""));
+		String descriptionKey = readString(source, OBJECTIVE_DESCRIPTION_KEY, "");
 		JsonObject target = objectField(source, TARGET);
 		QuestTarget.Kind kind = QuestTarget.Kind.fromId(readString(target, KIND, ""));
 		String targetId = readString(target, ID, "");
+		List<String> targetIds = readStrings(target, TARGET_IDS);
 		int required = readInt(source, REQUIRED, 0);
-		if (subcategory == null || kind == null || targetId.isBlank() || required < 1) return null;
+		if (subcategory == null || kind == null || (kind != QuestTarget.Kind.ANY_OF && targetId.isBlank())
+			|| (kind == QuestTarget.Kind.ANY_OF && targetIds.isEmpty()) || required < 1) return null;
 		try {
-			return new QuestObjective(subcategory, new QuestTarget(kind, targetId), required);
+			QuestTarget questTarget = kind == QuestTarget.Kind.ANY_OF
+				? QuestTarget.anyOf(targetIds)
+				: new QuestTarget(kind, targetId);
+			return new QuestObjective(subcategory, questTarget, required, descriptionKey);
 		} catch (IllegalArgumentException exception) {
 			return null;
 		}
+	}
+
+	private static List<String> readStrings(JsonObject source, String key) {
+		JsonElement element = source == null ? null : source.get(key);
+		if (element == null || !element.isJsonArray()) return List.of();
+		List<String> values = new ArrayList<>();
+		for (JsonElement value : element.getAsJsonArray()) {
+			if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()) {
+				String string = value.getAsString().trim();
+				if (!string.isBlank()) values.add(string);
+			}
+		}
+		return List.copyOf(values);
 	}
 
 	private static JsonObject objectField(JsonObject source, String key) {
@@ -301,6 +325,4 @@ final class QuestConfigManager {
 	private record CategoryFolder(String categoryId, String folderName) {
 	}
 
-	private record ObjectiveData(String subcategory, String kind, String targetId, int required) {
-	}
 }

@@ -15,6 +15,8 @@ public final class QuestRegistry {
 	public static final String MOBS_CATEGORY = QuestCategoryIds.MOBS;
 	public static final String PETS_CATEGORY = QuestCategoryIds.PETS;
 	public static final String LUMBERJACK = CoreQuestRegistrar.LUMBERJACK;
+	public static final String STONEWORKS = CoreQuestRegistrar.STONEWORKS;
+	public static final String COAL_MINER = CoreQuestRegistrar.COAL_MINER;
 
 	private static final Map<String, QuestDefinition> DEFINITIONS = new LinkedHashMap<>();
 	private static final List<QuestCategoryRegistrar> BUILT_IN_REGISTRARS = List.of(

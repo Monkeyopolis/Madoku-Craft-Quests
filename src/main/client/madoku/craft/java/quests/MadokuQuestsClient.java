@@ -196,6 +196,23 @@ public final class MadokuQuestsClient {
 		return entry == null ? "" : entry.progress() + "/" + entry.required();
 	}
 
+	static List<QuestObjectiveEntry> questObjectives(String categoryId, int questIndex) {
+		QuestEntry entry = questEntry(categoryId, questIndex);
+		return entry == null ? List.of() : entry.objectives();
+	}
+
+	static String objectiveDescription(QuestObjectiveEntry objective) {
+		if (objective == null) return "";
+		if (!objective.descriptionKey().isBlank()) {
+			return Component.translatable(objective.descriptionKey(), objective.required()).getString();
+		}
+		String targetName = objective.targetId().isBlank()
+			? "objective"
+			: objective.targetId().substring(objective.targetId().indexOf(':') + 1).replace('_', ' ');
+		String actionKey = "menu.madoku-craft.quests.objective." + normalizeId(objective.subcategory());
+		return Component.translatable(actionKey, targetName).getString();
+	}
+
 	static boolean questComplete(String categoryId, int questIndex) {
 		QuestEntry entry = questEntry(categoryId, questIndex);
 		return entry != null && entry.complete();
@@ -226,6 +243,14 @@ public final class MadokuQuestsClient {
 							|| titleKey.isBlank()
 							|| descriptionKey.isBlank()
 							|| QuestDifficulty.fromId(difficulty) == null) continue;
+						int displayProgress = Math.max(0, readInt(entry, "display-progress", 0));
+						int displayRequired = Math.max(0, readInt(entry, "display-required", 0));
+						List<QuestObjectiveEntry> objectives = readObjectiveEntries(
+							entry,
+							descriptionKey,
+							displayProgress,
+							displayRequired
+						);
 						List<QuestEntry> quests = questsByCategory.computeIfAbsent(category, ignored -> new ArrayList<>());
 						if (quests.size() < 7) {
 							quests.add(new QuestEntry(
@@ -234,9 +259,10 @@ public final class MadokuQuestsClient {
 								difficulty,
 								titleKey,
 								descriptionKey,
-								Math.max(0, readInt(entry, "display-progress", 0)),
-								Math.max(0, readInt(entry, "display-required", 0)),
-								readBoolean(entry, "complete", false)
+								displayProgress,
+								displayRequired,
+								readBoolean(entry, "complete", false),
+								objectives
 							));
 						}
 					}
@@ -255,6 +281,40 @@ public final class MadokuQuestsClient {
 			displayVersion++;
 			saveSelection();
 		}
+	}
+
+	private static List<QuestObjectiveEntry> readObjectiveEntries(
+		JsonObject quest,
+		String fallbackDescriptionKey,
+		int fallbackProgress,
+		int fallbackRequired
+	) {
+		List<QuestObjectiveEntry> objectives = new ArrayList<>();
+		JsonElement element = quest == null ? null : quest.get("objectives");
+		if (element != null && element.isJsonArray()) {
+			for (JsonElement objectiveElement : element.getAsJsonArray()) {
+				if (objectives.size() >= 3 || objectiveElement == null || !objectiveElement.isJsonObject()) break;
+				JsonObject objective = objectiveElement.getAsJsonObject();
+				int required = Math.max(1, readInt(objective, "required", 0));
+				objectives.add(new QuestObjectiveEntry(
+					readString(objective, "description-key", ""),
+					readString(objective, "subcategory", "collect"),
+					readString(objective, "target-id", ""),
+					Math.max(0, readInt(objective, "progress", 0)),
+					required
+				));
+			}
+		}
+		if (objectives.isEmpty() && fallbackRequired > 0) {
+			objectives.add(new QuestObjectiveEntry(
+				fallbackDescriptionKey,
+				"collect",
+				"",
+				fallbackProgress,
+				fallbackRequired
+			));
+		}
+		return List.copyOf(objectives);
 	}
 
 	private static void clearQuestState() {
@@ -368,8 +428,28 @@ public final class MadokuQuestsClient {
 		String descriptionKey,
 		int progress,
 		int required,
-		boolean complete
+		boolean complete,
+		List<QuestObjectiveEntry> objectives
 	) {
+		public QuestEntry {
+			objectives = objectives == null ? List.of() : List.copyOf(objectives);
+		}
+	}
+
+	public record QuestObjectiveEntry(
+		String descriptionKey,
+		String subcategory,
+		String targetId,
+		int progress,
+		int required
+	) {
+		public QuestObjectiveEntry {
+			descriptionKey = descriptionKey == null ? "" : descriptionKey.trim();
+			subcategory = subcategory == null ? "collect" : subcategory.trim().toLowerCase(Locale.ROOT);
+			targetId = targetId == null ? "" : targetId.trim().toLowerCase(Locale.ROOT);
+			required = Math.max(1, required);
+			progress = Math.max(0, Math.min(progress, required));
+		}
 	}
 
 	private record QuestSnapshot(
