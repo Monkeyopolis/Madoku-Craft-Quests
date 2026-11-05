@@ -28,7 +28,13 @@ public final class QuestRegistry {
 	public static final String COPPER_SPECIALIST = CoreQuestRegistrar.COPPER_SPECIALIST;
 	public static final String ORE_SMELTER = CoreQuestRegistrar.ORE_SMELTER;
 	public static final String STONE_VARIETY = CoreQuestRegistrar.STONE_VARIETY;
-	public static final String PROCESSING_LOGS = CoreQuestRegistrar.PROCESSING_LOGS;
+	public static final String THESE_ARE_STONES = CoreQuestRegistrar.THESE_ARE_STONES;
+	public static final String MASONRY = CoreQuestRegistrar.MASONRY;
+	public static final String LET_THERE_BE_LIGHT = CoreQuestRegistrar.LET_THERE_BE_LIGHT;
+	public static final String INFINITE_DIRT = CoreQuestRegistrar.INFINITE_DIRT;
+	public static final String CHAINMAIL_ARMOR = CoreQuestRegistrar.CHAINMAIL_ARMOR;
+	public static final String ENCHANTING_BOTTLES = CoreQuestRegistrar.ENCHANTING_BOTTLES;
+	public static final String MAKING_FIRE = CoreQuestRegistrar.MAKING_FIRE;
 
 	private static final Map<String, QuestDefinition> DEFINITIONS = new LinkedHashMap<>();
 	private static final List<QuestCategoryRegistrar> BUILT_IN_REGISTRARS = List.of(

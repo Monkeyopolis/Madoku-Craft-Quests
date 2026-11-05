@@ -18,7 +18,13 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 	public static final String COPPER_SPECIALIST = "copper-specialist";
 	public static final String ORE_SMELTER = "ore-smelter";
 	public static final String STONE_VARIETY = "stone-variety";
-	public static final String PROCESSING_LOGS = "processing-logs";
+	public static final String THESE_ARE_STONES = "these-are-stones";
+	public static final String MASONRY = "masonry";
+	public static final String LET_THERE_BE_LIGHT = "let-there-be-light";
+	public static final String INFINITE_DIRT = "infinite-dirt";
+	public static final String CHAINMAIL_ARMOR = "chainmail-armor";
+	public static final String ENCHANTING_BOTTLES = "enchanting-bottles";
+	public static final String MAKING_FIRE = "making-fire";
 
 	@Override
 	public String categoryId() {
@@ -37,7 +43,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.tag("minecraft:logs"),
-						48,
+						96,
 						"menu.madoku-craft.quests.lumberjack.objective.break"
 					)
 				)
@@ -51,7 +57,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:stone", "minecraft:cobblestone"),
-						64,
+						128,
 						"menu.madoku-craft.quests.stoneworks.objective.break"
 					)
 				)
@@ -71,7 +77,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 							"minecraft:mycelium",
 							"minecraft:dirt_path"
 						),
-						72,
+						192,
 						"menu.madoku-craft.quests.dirt-collector.objective.break"
 					)
 				)
@@ -85,7 +91,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				List.of(
 					QuestObjective.collects(
 						QuestTarget.id("minecraft:flint"),
-						12,
+						32,
 						"menu.madoku-craft.quests.collecting-flint.objective.collect"
 					)
 				)
@@ -95,11 +101,11 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.coal-miner",
 				"menu.madoku-craft.quests.coal-miner.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.RARE,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:coal_ore", "minecraft:deepslate_coal_ore"),
-						24,
+						64,
 						"menu.madoku-craft.quests.coal-miner.objective.break"
 					)
 				)
@@ -109,7 +115,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.diamonds",
 				"menu.madoku-craft.quests.diamonds.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.MYTHIC,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:diamond_ore", "minecraft:deepslate_diamond_ore"),
@@ -123,7 +129,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.obsidian",
 				"menu.madoku-craft.quests.obsidian.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.MYTHIC,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.id("minecraft:obsidian"),
@@ -137,7 +143,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.flaming-hot",
 				"menu.madoku-craft.quests.flaming-hot.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.LEGENDARY,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.uses(
 						QuestTarget.id("minecraft:lava_bucket"),
@@ -151,11 +157,11 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.shiny-gold",
 				"menu.madoku-craft.quests.shiny-gold.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.LEGENDARY,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:gold_ore", "minecraft:deepslate_gold_ore"),
-						8,
+						16,
 						"menu.madoku-craft.quests.shiny-gold.objective.break"
 					)
 				)
@@ -165,7 +171,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.sturdy-iron",
 				"menu.madoku-craft.quests.sturdy-iron.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.EPIC,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:iron_ore", "minecraft:deepslate_iron_ore"),
@@ -179,11 +185,11 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.copper-specialist",
 				"menu.madoku-craft.quests.copper-specialist.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.RARE,
+				QuestRarity.COMMON,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:copper_ore", "minecraft:deepslate_copper_ore"),
-						48,
+						96,
 						"menu.madoku-craft.quests.copper-specialist.objective.break"
 					)
 				)
@@ -193,16 +199,138 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.stone-variety",
 				"menu.madoku-craft.quests.stone-variety.description",
 				QuestCategoryIds.CORE,
+				QuestRarity.EPIC,
+				List.of(
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:diorite"),
+						48
+					),
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:granite"),
+						48
+					),
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:andesite"),
+						48
+					)
+				)
+			),
+			new QuestDefinition(
+				THESE_ARE_STONES,
+				"menu.madoku-craft.quests.these-are-stones",
+				"menu.madoku-craft.quests.these-are-stones.description",
+				QuestCategoryIds.CORE,
 				QuestRarity.RARE,
 				List.of(
 					QuestObjective.breaks(
+						QuestTarget.id("minecraft:deepslate"),
+						96
+					),
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:tuff"),
+						32
+					)
+				)
+			),
+			new QuestDefinition(
+				MASONRY,
+				"menu.madoku-craft.quests.masonry",
+				"menu.madoku-craft.quests.masonry.description",
+				QuestCategoryIds.CORE,
+				QuestRarity.MYTHIC,
+				List.of(
+					QuestObjective.collects(
+						QuestTarget.id("minecraft:clay_ball"),
+						64
+					),
+					QuestObjective.smelts(
+						QuestTarget.id("minecraft:brick"),
+						64
+					),
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:bricks"),
+						64
+					)
+				)
+			),
+			new QuestDefinition(
+				LET_THERE_BE_LIGHT,
+				"menu.madoku-craft.quests.let-there-be-light",
+				"menu.madoku-craft.quests.let-there-be-light.description",
+				QuestCategoryIds.CORE,
+				QuestRarity.LEGENDARY,
+				List.of(
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:stick"),
+						32
+					),
+					QuestObjective.smelts(
+						QuestTarget.id("minecraft:charcoal"),
+						32
+					),
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:torch"),
+						128
+					)
+				)
+			),
+			new QuestDefinition(
+				INFINITE_DIRT,
+				"menu.madoku-craft.quests.infinite-dirt",
+				"menu.madoku-craft.quests.infinite-dirt.description",
+				QuestCategoryIds.CORE,
+				QuestRarity.LEGENDARY,
+				List.of(
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:dirt"),
+						64
+					),
+					QuestObjective.breaks(
+						QuestTarget.id("minecraft:gravel"),
+						64
+					),
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:coarse_dirt"),
+						128
+					)
+				)
+			),
+			new QuestDefinition(
+				CHAINMAIL_ARMOR,
+				"menu.madoku-craft.quests.chainmail-armor",
+				"menu.madoku-craft.quests.chainmail-armor.description",
+				QuestCategoryIds.CORE,
+				QuestRarity.RARE,
+				List.of(
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:iron_nugget"),
+						32
+					),
+					QuestObjective.crafts(
 						QuestTarget.anyOf(
-							"minecraft:granite",
-							"minecraft:diorite",
-							"minecraft:andesite"
+							"minecraft:chainmail_helmet",
+							"minecraft:chainmail_chestplate",
+							"minecraft:chainmail_leggings",
+							"minecraft:chainmail_boots"
 						),
-						40,
-						"menu.madoku-craft.quests.stone-variety.objective.break"
+						4
+					)
+				)
+			),
+			new QuestDefinition(
+				ENCHANTING_BOTTLES,
+				"menu.madoku-craft.quests.enchanting-bottles",
+				"menu.madoku-craft.quests.enchanting-bottles.description",
+				QuestCategoryIds.CORE,
+				QuestRarity.LEGENDARY,
+				List.of(
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:glass_bottle"),
+						6
+					),
+					QuestObjective.enchants(
+						QuestTarget.id("minecraft:experience_bottle"),
+						6
 					)
 				)
 			),
@@ -211,16 +339,16 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.glass-maker",
 				"menu.madoku-craft.quests.glass-maker.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.RARE,
+				QuestRarity.LEGENDARY,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:sand", "minecraft:red_sand"),
-						24,
+						64,
 						"menu.madoku-craft.quests.glass-maker.objective.break"
 					),
 					QuestObjective.smelts(
 						QuestTarget.id("minecraft:glass"),
-						24,
+						64,
 						"menu.madoku-craft.quests.glass-maker.objective.smelt",
 						List.of("minecraft:sand", "minecraft:red_sand")
 					)
@@ -231,47 +359,49 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				"menu.madoku-craft.quests.ore-smelter",
 				"menu.madoku-craft.quests.ore-smelter.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.EPIC,
+				QuestRarity.LEGENDARY,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf(
-							"minecraft:copper_ore",
-							"minecraft:deepslate_copper_ore",
 							"minecraft:iron_ore",
 							"minecraft:deepslate_iron_ore",
 							"minecraft:gold_ore",
 							"minecraft:deepslate_gold_ore"
 						),
-						32,
+						64,
 						"menu.madoku-craft.quests.ore-smelter.objective.break"
 					),
 					QuestObjective.smelts(
 						QuestTarget.anyOf(
-							"minecraft:copper_ingot",
 							"minecraft:iron_ingot",
 							"minecraft:gold_ingot"
 						),
-						32,
+						64,
 						"menu.madoku-craft.quests.ore-smelter.objective.smelt"
 					)
 				)
 			),
 			new QuestDefinition(
-				PROCESSING_LOGS,
-				"menu.madoku-craft.quests.processing-logs",
-				"menu.madoku-craft.quests.processing-logs.description",
+				MAKING_FIRE,
+				"menu.madoku-craft.quests.making-fire",
+				"menu.madoku-craft.quests.making-fire.description",
 				QuestCategoryIds.CORE,
-				QuestRarity.RARE,
+				QuestRarity.MYTHIC,
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.tag("minecraft:logs"),
-						24,
-						"menu.madoku-craft.quests.processing-logs.objective.break"
+						64,
+						"menu.madoku-craft.quests.making-fire.objective.break"
 					),
 					QuestObjective.strips(
 						QuestTarget.tag("minecraft:logs"),
-						24,
-						"menu.madoku-craft.quests.processing-logs.objective.strip"
+						64,
+						"menu.madoku-craft.quests.making-fire.objective.strip"
+					),
+					QuestObjective.crafts(
+						QuestTarget.id("minecraft:campfire"),
+						16,
+						"menu.madoku-craft.quests.making-fire.objective.crafting"
 					)
 				)
 			)

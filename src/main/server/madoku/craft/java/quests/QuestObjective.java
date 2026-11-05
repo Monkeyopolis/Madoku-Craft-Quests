@@ -51,6 +51,22 @@ public record QuestObjective(
 		return new QuestObjective(QuestSubcategory.COLLECT, target, requiredCount, descriptionKey);
 	}
 
+	public static QuestObjective crafts(QuestTarget target, int requiredCount) {
+		return new QuestObjective(QuestSubcategory.CRAFTING, target, requiredCount);
+	}
+
+	public static QuestObjective crafts(QuestTarget target, int requiredCount, String descriptionKey) {
+		return new QuestObjective(QuestSubcategory.CRAFTING, target, requiredCount, descriptionKey);
+	}
+
+	public static QuestObjective enchants(QuestTarget target, int requiredCount) {
+		return new QuestObjective(QuestSubcategory.ENCHANT, target, requiredCount);
+	}
+
+	public static QuestObjective enchants(QuestTarget target, int requiredCount, String descriptionKey) {
+		return new QuestObjective(QuestSubcategory.ENCHANT, target, requiredCount, descriptionKey);
+	}
+
 	public static QuestObjective smelts(QuestTarget target, int requiredCount) {
 		return new QuestObjective(QuestSubcategory.SMELT, target, requiredCount);
 	}

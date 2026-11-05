@@ -17,7 +17,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class FurnaceResultSlotQuestSmeltMixin {
 	@Inject(method = "onTake(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/item/ItemStack;)V", at = @At("TAIL"))
 	private void madokuCraft$trackSmeltedOutput(Player player, ItemStack stack, CallbackInfo ci) {
-		if (!(player instanceof ServerPlayer serverPlayer) || stack == null || stack.isEmpty()) return;
+		if (!(player instanceof ServerPlayer serverPlayer)
+			|| QuestsStateBridge.isShiftResultTransferActive()
+			|| stack == null
+			|| stack.isEmpty()) return;
 		FurnaceResultSlot resultSlot = (FurnaceResultSlot) (Object) this;
 		Container container = resultSlot.container;
 		if (!(container instanceof AbstractFurnaceBlockEntity)) return;

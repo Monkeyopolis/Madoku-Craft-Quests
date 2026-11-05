@@ -159,7 +159,13 @@ final class QuestConfigManager {
 			Map.entry(CoreQuestRegistrar.COPPER_SPECIALIST, buildDefaultFile(categoryId, CoreQuestRegistrar.COPPER_SPECIALIST)),
 			Map.entry(CoreQuestRegistrar.ORE_SMELTER, buildDefaultFile(categoryId, CoreQuestRegistrar.ORE_SMELTER)),
 			Map.entry(CoreQuestRegistrar.STONE_VARIETY, buildDefaultFile(categoryId, CoreQuestRegistrar.STONE_VARIETY)),
-			Map.entry(CoreQuestRegistrar.PROCESSING_LOGS, buildDefaultFile(categoryId, CoreQuestRegistrar.PROCESSING_LOGS))
+			Map.entry(CoreQuestRegistrar.THESE_ARE_STONES, buildDefaultFile(categoryId, CoreQuestRegistrar.THESE_ARE_STONES)),
+			Map.entry(CoreQuestRegistrar.MASONRY, buildDefaultFile(categoryId, CoreQuestRegistrar.MASONRY)),
+			Map.entry(CoreQuestRegistrar.LET_THERE_BE_LIGHT, buildDefaultFile(categoryId, CoreQuestRegistrar.LET_THERE_BE_LIGHT)),
+			Map.entry(CoreQuestRegistrar.INFINITE_DIRT, buildDefaultFile(categoryId, CoreQuestRegistrar.INFINITE_DIRT)),
+			Map.entry(CoreQuestRegistrar.CHAINMAIL_ARMOR, buildDefaultFile(categoryId, CoreQuestRegistrar.CHAINMAIL_ARMOR)),
+			Map.entry(CoreQuestRegistrar.ENCHANTING_BOTTLES, buildDefaultFile(categoryId, CoreQuestRegistrar.ENCHANTING_BOTTLES)),
+			Map.entry(CoreQuestRegistrar.MAKING_FIRE, buildDefaultFile(categoryId, CoreQuestRegistrar.MAKING_FIRE))
 		);
 	}
 

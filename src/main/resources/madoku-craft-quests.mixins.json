@@ -5,7 +5,13 @@
   "mixins": [
 	"quests.AbstractContainerMenuQuestCollectMixin",
 	"quests.ItemStackQuestStripMixin",
+	    "quests.ResultSlotQuestCraftMixin",
+	    "quests.CraftingMenuQuestCraftMixin",
+	    "quests.InventoryMenuQuestCraftMixin",
+	    "quests.EnchantTableQuestEnchantMixin",
+	    "quests.EnchantmentMenuQuestEnchantMixin",
 	    "quests.FurnaceResultSlotQuestSmeltMixin",
+	    "quests.AbstractFurnaceMenuQuestSmeltMixin",
 	    "quests.ItemEntityQuestCollectMixin",
 	    "quests.BucketItemQuestUseMixin"
   ],

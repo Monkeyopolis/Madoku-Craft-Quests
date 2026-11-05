@@ -211,6 +211,20 @@ final class QuestsStateManager {
 		if (changed) markProgressChanged(player);
 	}
 
+	static void onItemCrafted(ServerPlayer player, Item item, int amount) {
+		if (player == null || item == null || amount <= 0) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = state.addCrafted(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
+	static void onItemEnchanted(ServerPlayer player, Item item, int amount) {
+		if (player == null || item == null || amount <= 0) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = state.addEnchanted(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
 	static void onItemSmelted(ServerPlayer player, Item item, int amount) {
 		if (player == null || item == null || amount <= 0) return;
 		PlayerQuestState state = stateFor(player);
@@ -820,6 +834,38 @@ final class QuestsStateManager {
 			return changed;
 		}
 
+		private boolean addCrafted(Item item, int amount) {
+			QuestDefinition definition = definition();
+			if (definition == null || amount <= 0) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.CRAFTING) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchesItem(objective.target(), item)) continue;
+				int next = (int) Math.min(required, (long) progress[index] + amount);
+				changed |= next != progress[index];
+				progress[index] = next;
+			}
+			return changed;
+		}
+
+		private boolean addEnchanted(Item item, int amount) {
+			QuestDefinition definition = definition();
+			if (definition == null || amount <= 0) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.ENCHANT) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchesItem(objective.target(), item)) continue;
+				int next = (int) Math.min(required, (long) progress[index] + amount);
+				changed |= next != progress[index];
+				progress[index] = next;
+			}
+			return changed;
+		}
+
 		private boolean addSmelted(Item item, int amount) {
 			QuestDefinition definition = definition();
 			if (definition == null || amount <= 0) return false;
@@ -936,6 +982,18 @@ final class QuestsStateManager {
 		private boolean addCollected(Item item, int amount) {
 			boolean changed = false;
 			for (QuestRecord quest : quests) changed |= quest.addCollected(item, amount);
+			return changed;
+		}
+
+		private boolean addCrafted(Item item, int amount) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addCrafted(item, amount);
+			return changed;
+		}
+
+		private boolean addEnchanted(Item item, int amount) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addEnchanted(item, amount);
 			return changed;
 		}
 

@@ -6,9 +6,11 @@ import java.util.Locale;
 public enum QuestSubcategory {
 	BREAK("break", 1.0D),
 	COLLECT("collect", 1.0D),
-	SMELT("smelt", 1.4D),
-	STRIP("strip", 1.2D),
-	USE("use", 1.2D);
+	CRAFTING("crafting", 1.25D),
+	ENCHANT("enchant", 1.25D),
+	SMELT("smelt", 1.5D),
+	STRIP("strip", 1.25D),
+	USE("use", 1.25D);
 
 	private final String id;
 	private final double rewardMultiplier;
