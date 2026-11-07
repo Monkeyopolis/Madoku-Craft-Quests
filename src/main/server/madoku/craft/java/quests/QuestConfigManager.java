@@ -82,7 +82,6 @@ final class QuestConfigManager {
 				}
 			}
 			QuestRegistry.replaceDefinitions(List.copyOf(definitions.values()));
-			LOGGER.info("Loaded {} configurable Madoku quest definition(s).", definitions.size());
 		} catch (IOException | RuntimeException exception) {
 			QuestRegistry.replaceDefinitions(QuestRegistry.builtInDefinitions());
 			LOGGER.error("Failed to load Madoku quest definitions; using built-in defaults.", exception);
@@ -143,8 +142,7 @@ final class QuestConfigManager {
 	}
 
 	private static Map<String, JsonObject> buildStaticDefaults(String categoryId) {
-		if (!QuestCategoryIds.CORE.equals(categoryId)) return Map.of();
-		return Map.ofEntries(
+		if (QuestCategoryIds.CORE.equals(categoryId)) return Map.ofEntries(
 			Map.entry(CoreQuestRegistrar.LUMBERJACK, buildDefaultFile(categoryId, CoreQuestRegistrar.LUMBERJACK)),
 			Map.entry(CoreQuestRegistrar.STONEWORKS, buildDefaultFile(categoryId, CoreQuestRegistrar.STONEWORKS)),
 			Map.entry(CoreQuestRegistrar.DIRT_COLLECTOR, buildDefaultFile(categoryId, CoreQuestRegistrar.DIRT_COLLECTOR)),
@@ -167,6 +165,24 @@ final class QuestConfigManager {
 			Map.entry(CoreQuestRegistrar.ENCHANTING_BOTTLES, buildDefaultFile(categoryId, CoreQuestRegistrar.ENCHANTING_BOTTLES)),
 			Map.entry(CoreQuestRegistrar.MAKING_FIRE, buildDefaultFile(categoryId, CoreQuestRegistrar.MAKING_FIRE))
 		);
+		if (QuestCategoryIds.FARMING.equals(categoryId)) return Map.ofEntries(
+			Map.entry(FarmingQuestRegistrar.GROWING_POTATOES, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_POTATOES)),
+			Map.entry(FarmingQuestRegistrar.GROWING_WHEAT, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_WHEAT)),
+			Map.entry(FarmingQuestRegistrar.GROWING_SWEET_BERRIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_SWEET_BERRIES)),
+			Map.entry(FarmingQuestRegistrar.GROWING_PUMPKINS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_PUMPKINS)),
+			Map.entry(FarmingQuestRegistrar.PUMPKIN_PIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.PUMPKIN_PIES)),
+			Map.entry(FarmingQuestRegistrar.GROWING_BEETROOT, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_BEETROOT)),
+			Map.entry(FarmingQuestRegistrar.BOUNTIFUL_HARVESTS, buildDefaultFile(categoryId, FarmingQuestRegistrar.BOUNTIFUL_HARVESTS)),
+			Map.entry(FarmingQuestRegistrar.GROWING_CARROTS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_CARROTS)),
+			Map.entry(FarmingQuestRegistrar.GOLDEN_CARROTS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GOLDEN_CARROTS)),
+			Map.entry(FarmingQuestRegistrar.ARE_THOSE_STEMS, buildDefaultFile(categoryId, FarmingQuestRegistrar.ARE_THOSE_STEMS)),
+			Map.entry(FarmingQuestRegistrar.THESE_ARE_CROPS, buildDefaultFile(categoryId, FarmingQuestRegistrar.THESE_ARE_CROPS)),
+			Map.entry(FarmingQuestRegistrar.COOKING_BEETROOT_SOUP, buildDefaultFile(categoryId, FarmingQuestRegistrar.COOKING_BEETROOT_SOUP)),
+			Map.entry(FarmingQuestRegistrar.MAKING_BREAD, buildDefaultFile(categoryId, FarmingQuestRegistrar.MAKING_BREAD)),
+			Map.entry(FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES)),
+			Map.entry(FarmingQuestRegistrar.BAKING_POTATOES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_POTATOES))
+		);
+		return Map.of();
 	}
 
 	private static JsonObject buildDefaultFile(String categoryId, String fileKey) {

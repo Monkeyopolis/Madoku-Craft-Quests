@@ -67,6 +67,14 @@ public record QuestObjective(
 		return new QuestObjective(QuestSubcategory.ENCHANT, target, requiredCount, descriptionKey);
 	}
 
+	public static QuestObjective harvests(QuestTarget target, int requiredCount) {
+		return new QuestObjective(QuestSubcategory.HARVEST, target, requiredCount);
+	}
+
+	public static QuestObjective harvests(QuestTarget target, int requiredCount, String descriptionKey) {
+		return new QuestObjective(QuestSubcategory.HARVEST, target, requiredCount, descriptionKey);
+	}
+
 	public static QuestObjective smelts(QuestTarget target, int requiredCount) {
 		return new QuestObjective(QuestSubcategory.SMELT, target, requiredCount);
 	}

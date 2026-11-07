@@ -175,7 +175,7 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				List.of(
 					QuestObjective.breaks(
 						QuestTarget.anyOf("minecraft:iron_ore", "minecraft:deepslate_iron_ore"),
-						16,
+						32,
 						"menu.madoku-craft.quests.sturdy-iron.objective.break"
 					)
 				)
@@ -241,15 +241,15 @@ public final class CoreQuestRegistrar implements QuestCategoryRegistrar {
 				List.of(
 					QuestObjective.collects(
 						QuestTarget.id("minecraft:clay_ball"),
-						64
+						128
 					),
 					QuestObjective.smelts(
 						QuestTarget.id("minecraft:brick"),
-						64
+						128
 					),
 					QuestObjective.crafts(
 						QuestTarget.id("minecraft:bricks"),
-						64
+						32
 					)
 				)
 			),

@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import madoku.craft.java.core.data.DataSaveParticipant;
 import madoku.craft.java.core.data.DataSaveParticipantAPIManager;
 import madoku.craft.java.core.data.ChunkDataAPIManager;
+import madoku.craft.java.core.farming.CropHarvestAPIManager;
 import madoku.craft.java.core.data.PlayerDataAPIManager;
 import madoku.craft.java.core.module.MadokuModuleIds;
 import madoku.craft.java.core.module.MadokuModuleLifecycleManager;
@@ -115,6 +116,7 @@ final class QuestsStateManager {
 			QuestsPayloadAPIManager.TurnInPayload.TYPE,
 			(payload, context) -> handleTurnIn(context.player(), payload.questId())
 		);
+		CropHarvestAPIManager.registerListener(QuestsStateManager::onCropHarvested);
 		PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
 			if (world instanceof ServerLevel level && player instanceof ServerPlayer serverPlayer) {
 				onBlockBroken(serverPlayer, level, pos, state);
@@ -236,6 +238,17 @@ final class QuestsStateManager {
 		if (player == null || item == null || amount <= 0) return;
 		PlayerQuestState state = stateFor(player);
 		boolean changed = state.addUsed(item, amount);
+		if (changed) markProgressChanged(player);
+	}
+
+	private static void onCropHarvested(ServerPlayer player, List<ItemStack> drops) {
+		if (player == null || drops == null || drops.isEmpty()) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = false;
+		for (ItemStack drop : drops) {
+			if (drop == null || drop.isEmpty()) continue;
+			changed |= state.addHarvested(drop.getItem(), drop.getCount());
+		}
 		if (changed) markProgressChanged(player);
 	}
 
@@ -899,6 +912,22 @@ final class QuestsStateManager {
 			return changed;
 		}
 
+		private boolean addHarvested(Item item, int amount) {
+			QuestDefinition definition = definition();
+			if (definition == null || amount <= 0) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.HARVEST) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchesItem(objective.target(), item)) continue;
+				int next = (int) Math.min(required, (long) progress[index] + amount);
+				changed |= next != progress[index];
+				progress[index] = next;
+			}
+			return changed;
+		}
+
 		private int displayProgress() {
 			QuestDefinition definition = definition();
 			if (definition == null || progress.length == 0) return 0;
@@ -1006,6 +1035,12 @@ final class QuestsStateManager {
 		private boolean addUsed(Item item, int amount) {
 			boolean changed = false;
 			for (QuestRecord quest : quests) changed |= quest.addUsed(item, amount);
+			return changed;
+		}
+
+		private boolean addHarvested(Item item, int amount) {
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addHarvested(item, amount);
 			return changed;
 		}
 	}

@@ -8,6 +8,7 @@ public enum QuestSubcategory {
 	COLLECT("collect", 1.0D),
 	CRAFTING("crafting", 1.25D),
 	ENCHANT("enchant", 1.25D),
+	HARVEST("harvest", 2.0D),
 	SMELT("smelt", 1.5D),
 	STRIP("strip", 1.25D),
 	USE("use", 1.25D);

@@ -35,6 +35,21 @@ public final class QuestRegistry {
 	public static final String CHAINMAIL_ARMOR = CoreQuestRegistrar.CHAINMAIL_ARMOR;
 	public static final String ENCHANTING_BOTTLES = CoreQuestRegistrar.ENCHANTING_BOTTLES;
 	public static final String MAKING_FIRE = CoreQuestRegistrar.MAKING_FIRE;
+	public static final String GROWING_POTATOES = FarmingQuestRegistrar.GROWING_POTATOES;
+	public static final String GROWING_WHEAT = FarmingQuestRegistrar.GROWING_WHEAT;
+	public static final String GROWING_SWEET_BERRIES = FarmingQuestRegistrar.GROWING_SWEET_BERRIES;
+	public static final String GROWING_PUMPKINS = FarmingQuestRegistrar.GROWING_PUMPKINS;
+	public static final String PUMPKIN_PIES = FarmingQuestRegistrar.PUMPKIN_PIES;
+	public static final String GROWING_BEETROOT = FarmingQuestRegistrar.GROWING_BEETROOT;
+	public static final String BOUNTIFUL_HARVESTS = FarmingQuestRegistrar.BOUNTIFUL_HARVESTS;
+	public static final String GROWING_CARROTS = FarmingQuestRegistrar.GROWING_CARROTS;
+	public static final String GOLDEN_CARROTS = FarmingQuestRegistrar.GOLDEN_CARROTS;
+	public static final String ARE_THOSE_STEMS = FarmingQuestRegistrar.ARE_THOSE_STEMS;
+	public static final String THESE_ARE_CROPS = FarmingQuestRegistrar.THESE_ARE_CROPS;
+	public static final String COOKING_BEETROOT_SOUP = FarmingQuestRegistrar.COOKING_BEETROOT_SOUP;
+	public static final String MAKING_BREAD = FarmingQuestRegistrar.MAKING_BREAD;
+	public static final String BAKING_SWEET_BERRY_COOKIES = FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES;
+	public static final String BAKING_POTATOES = FarmingQuestRegistrar.BAKING_POTATOES;
 
 	private static final Map<String, QuestDefinition> DEFINITIONS = new LinkedHashMap<>();
 	private static final List<QuestCategoryRegistrar> BUILT_IN_REGISTRARS = List.of(
