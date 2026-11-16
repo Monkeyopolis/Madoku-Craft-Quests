@@ -3,6 +3,7 @@
   "package": "madoku.craft.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+	"quests.LivingEntityQuestDamageMixin",
 	"quests.AbstractContainerMenuQuestCollectMixin",
 	"quests.ItemStackQuestStripMixin",
 	    "quests.ResultSlotQuestCraftMixin",
@@ -13,7 +14,8 @@
 	    "quests.FurnaceResultSlotQuestSmeltMixin",
 	    "quests.AbstractFurnaceMenuQuestSmeltMixin",
 	    "quests.ItemEntityQuestCollectMixin",
-	    "quests.BucketItemQuestUseMixin"
+	    "quests.BucketItemQuestUseMixin",
+	    "quests.ItemStackQuestUseMixin"
   ],
   "injectors": { "defaultRequire": 1 }
 }

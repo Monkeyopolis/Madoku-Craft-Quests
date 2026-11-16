@@ -34,16 +34,21 @@ public abstract class BucketItemQuestUseMixin {
 		BlockState state
 	) {
 		ItemStack result = bucketPickup.pickupBlock(entity, level, pos, state);
+		ServerLevel serverLevel = level instanceof ServerLevel value ? value : null;
+		ServerPlayer serverPlayer = entity instanceof ServerPlayer value ? value : null;
+		boolean isLava = state != null && state.getFluidState().is(FluidTags.LAVA);
+		boolean isSource = state != null && state.getFluidState().isSource();
+		boolean isPlayerPlaced = serverLevel != null && ChunkDataAPIManager.isPlayerPlacedBlock(serverLevel, pos);
 		if (result.isEmpty()
-			|| !(level instanceof ServerLevel serverLevel)
-			|| !(entity instanceof ServerPlayer serverPlayer)
+			|| serverLevel == null
+			|| serverPlayer == null
 			|| serverPlayer.isCreative()
-			|| !state.getFluidState().is(FluidTags.LAVA)
-			|| !state.getFluidState().isSource()) {
+			|| !isLava
+			|| !isSource) {
 			return result;
 		}
 
-		if (ChunkDataAPIManager.isPlayerPlacedBlock(serverLevel, pos)) {
+		if (isPlayerPlaced) {
 			ChunkDataAPIManager.removePlayerPlacedBlock(serverLevel, pos);
 			return result;
 		}

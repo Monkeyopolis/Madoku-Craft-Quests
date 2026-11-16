@@ -12,9 +12,12 @@ import madoku.craft.java.core.module.MadokuModuleIds;
 import madoku.craft.java.core.module.MadokuModuleLifecycleManager;
 import madoku.craft.java.core.essence.EssenceManager;
 import madoku.craft.java.core.loot.LootTableAPIManager;
+import madoku.craft.java.core.loot.LootFeatureAPIManager;
+import madoku.craft.java.core.entityvariant.EntityVariantAPIManager;
 import madoku.craft.java.core.quest.QuestRewardAPIManager;
 import madoku.craft.java.core.sync.SyncPlayerAPIManager;
 import madoku.craft.java.core.time.TimeAPIManager;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -33,6 +36,8 @@ import net.minecraft.util.Prediction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +54,7 @@ import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Owns persisted player quest inventories, assignment, and server-authoritative progress. */
 final class QuestsStateManager {
@@ -75,11 +81,13 @@ final class QuestsStateManager {
 	private static final int MAX_QUESTS_PER_CATEGORY = 7;
 	private static final long QUEST_INTERVAL_WORLD_TICKS = TimeAPIManager.MINECRAFT_TICKS_PER_CYCLE;
 	private static final long PROGRESS_SYNC_INTERVAL_TICKS = 5L;
+	private static final long KILL_ATTRIBUTION_WINDOW_TICKS = 100L;
+	private static final long KILL_ATTRIBUTION_REFRESH_THRESHOLD_TICKS = 20L;
 	private static final List<CategoryDefinition> CATEGORY_DEFINITIONS = List.of(
 		new CategoryDefinition(QuestRegistry.CORE_CATEGORY, MadokuModuleIds.CORE),
 		new CategoryDefinition(QuestRegistry.FARMING_CATEGORY, MadokuModuleIds.FARMING),
 		new CategoryDefinition(QuestRegistry.MOBS_CATEGORY, MadokuModuleIds.MOBS),
-		new CategoryDefinition(QuestRegistry.PETS_CATEGORY, MadokuModuleIds.PETS)
+		new CategoryDefinition(QuestRegistry.COMPAT_CATEGORY, MadokuModuleIds.COMPAT)
 	);
 	private static final Map<UUID, PlayerQuestState> STATES_BY_PLAYER = new HashMap<>();
 	private static final Set<UUID> DIRTY_SYNCS = new HashSet<>();
@@ -89,6 +97,11 @@ final class QuestsStateManager {
 	);
 	private static final Map<UUID, QuestScheduleEntry> SCHEDULE_BY_PLAYER = new HashMap<>();
 	private static final Map<UUID, Long> NEXT_PROGRESS_SYNC_TICKS = new HashMap<>();
+	private static final Map<UUID, KillAttribution> KILL_ATTRIBUTIONS = new HashMap<>();
+	private static final Map<String, Identifier> TARGET_IDENTIFIERS = new ConcurrentHashMap<>();
+	private static final PriorityQueue<KillAttribution> KILL_ATTRIBUTION_EXPIRIES = new PriorityQueue<>(
+		Comparator.comparingLong(KillAttribution::expiresAtTick)
+	);
 	private static long lastObservedWorldTime = Long.MIN_VALUE;
 	private static boolean initialized;
 	private static final DataSaveParticipant DATA_SAVE_PARTICIPANT = new DataSaveParticipant() {
@@ -117,6 +130,7 @@ final class QuestsStateManager {
 			(payload, context) -> handleTurnIn(context.player(), payload.questId())
 		);
 		CropHarvestAPIManager.registerListener(QuestsStateManager::onCropHarvested);
+		ServerLivingEntityEvents.AFTER_DEATH.register(QuestsStateManager::onEntityKilled);
 		PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
 			if (world instanceof ServerLevel level && player instanceof ServerPlayer serverPlayer) {
 				onBlockBroken(serverPlayer, level, pos, state);
@@ -144,6 +158,8 @@ final class QuestsStateManager {
 		ASSIGNMENT_SCHEDULE.clear();
 		SCHEDULE_BY_PLAYER.clear();
 		NEXT_PROGRESS_SYNC_TICKS.clear();
+		KILL_ATTRIBUTIONS.clear();
+		KILL_ATTRIBUTION_EXPIRIES.clear();
 		lastObservedWorldTime = Long.MIN_VALUE;
 		lastAutosaveBucket = Long.MIN_VALUE;
 	}
@@ -174,6 +190,8 @@ final class QuestsStateManager {
 		ASSIGNMENT_SCHEDULE.clear();
 		SCHEDULE_BY_PLAYER.clear();
 		NEXT_PROGRESS_SYNC_TICKS.clear();
+		KILL_ATTRIBUTIONS.clear();
+		KILL_ATTRIBUTION_EXPIRIES.clear();
 		lastObservedWorldTime = server == null || server.overworld() == null ? Long.MIN_VALUE : currentWorldTime(server);
 		lastAutosaveBucket = server == null || server.overworld() == null ? Long.MIN_VALUE : autosaveBucket(server);
 		if (server == null) return;
@@ -184,6 +202,7 @@ final class QuestsStateManager {
 
 	static void onServerTick(MinecraftServer server) {
 		if (server == null || server.overworld() == null) return;
+		pruneKillAttributions(server.overworld().getGameTime());
 		long currentWorldTime = currentWorldTime(server);
 		boolean worldTimeRolledBack = lastObservedWorldTime != Long.MIN_VALUE && currentWorldTime < lastObservedWorldTime;
 		lastObservedWorldTime = currentWorldTime;
@@ -202,6 +221,8 @@ final class QuestsStateManager {
 		ASSIGNMENT_SCHEDULE.clear();
 		SCHEDULE_BY_PLAYER.clear();
 		NEXT_PROGRESS_SYNC_TICKS.clear();
+		KILL_ATTRIBUTIONS.clear();
+		KILL_ATTRIBUTION_EXPIRIES.clear();
 		lastObservedWorldTime = Long.MIN_VALUE;
 		lastAutosaveBucket = Long.MIN_VALUE;
 	}
@@ -249,6 +270,45 @@ final class QuestsStateManager {
 			if (drop == null || drop.isEmpty()) continue;
 			changed |= state.addHarvested(drop.getItem(), drop.getCount());
 		}
+		if (changed) markProgressChanged(player);
+	}
+
+	static void onEntityDamaged(LivingEntity entity, DamageSource damageSource) {
+		if (entity == null || damageSource == null || !(entity.level() instanceof ServerLevel)) return;
+		ServerPlayer player = LootFeatureAPIManager.resolvePlayerDamageSource(damageSource);
+		if (player == null) return;
+		PlayerQuestState state = STATES_BY_PLAYER.get(player.getUUID());
+		if (state == null || !state.hasMatchingKillObjective(entity)) return;
+
+		long currentGameTime = entity.level().getGameTime();
+		UUID entityId = entity.getUUID();
+		KillAttribution previous = KILL_ATTRIBUTIONS.get(entityId);
+		if (previous != null
+			&& previous.playerId().equals(player.getUUID())
+			&& previous.expiresAtTick() > safeAdd(currentGameTime, KILL_ATTRIBUTION_REFRESH_THRESHOLD_TICKS)) {
+			return;
+		}
+
+		KillAttribution attribution = new KillAttribution(
+			entityId,
+			player.getUUID(),
+			safeAdd(currentGameTime, KILL_ATTRIBUTION_WINDOW_TICKS)
+		);
+		KILL_ATTRIBUTIONS.put(entityId, attribution);
+		KILL_ATTRIBUTION_EXPIRIES.add(attribution);
+	}
+
+	private static void onEntityKilled(LivingEntity entity, DamageSource damageSource) {
+		if (entity == null || damageSource == null) return;
+		KillAttribution attribution = KILL_ATTRIBUTIONS.remove(entity.getUUID());
+		ServerPlayer player = LootFeatureAPIManager.resolvePlayerDamageSource(damageSource);
+		if (player == null && attribution != null && attribution.expiresAtTick() > entity.level().getGameTime()) {
+			MinecraftServer server = entity.level().getServer();
+			player = server == null ? null : server.getPlayerList().getPlayer(attribution.playerId());
+		}
+		if (player == null) return;
+		PlayerQuestState state = stateFor(player);
+		boolean changed = state.addKilled(entity);
 		if (changed) markProgressChanged(player);
 	}
 
@@ -693,6 +753,58 @@ final class QuestsStateManager {
 		return false;
 	}
 
+	private static Identifier targetIdentifier(String value) {
+		if (value == null || value.isBlank()) return null;
+		String normalized = value.trim().toLowerCase(Locale.ROOT);
+		return TARGET_IDENTIFIERS.computeIfAbsent(normalized, Identifier::tryParse);
+	}
+
+	private static final class KillMatchContext {
+		private final LivingEntity entity;
+		private final Identifier entityTypeId;
+		private boolean variantResolved;
+		private Identifier variantId;
+
+		private KillMatchContext(LivingEntity entity) {
+			this.entity = entity;
+			this.entityTypeId = entity == null ? null : BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+		}
+
+		private boolean matches(QuestTarget target) {
+			if (target == null || entity == null) return false;
+			boolean matchesTarget;
+			if (target.kind() == QuestTarget.Kind.TAG) {
+				Identifier identifier = targetIdentifier(target.id());
+				matchesTarget = identifier != null
+					&& entity.typeHolder().is(TagKey.create(Registries.ENTITY_TYPE, identifier));
+			} else {
+				if (entityTypeId == null) return false;
+				matchesTarget = false;
+				for (String targetId : target.ids()) {
+					if (entityTypeId.equals(targetIdentifier(targetId))) {
+						matchesTarget = true;
+						break;
+					}
+				}
+			}
+			if (!matchesTarget) return false;
+			if (target.variantId().isBlank()) return true;
+
+			Identifier expectedVariantId = targetIdentifier(target.variantId());
+			if (expectedVariantId == null) return false;
+			if (!variantResolved) {
+				variantResolved = true;
+				variantId = EntityVariantAPIManager.resolveVariant(entity)
+					.map(identity -> identity.variantId())
+					.orElse(null);
+			}
+			return expectedVariantId.equals(variantId)
+				|| (variantId != null
+					&& expectedVariantId.getNamespace().equals(variantId.getNamespace())
+					&& variantId.getPath().startsWith(expectedVariantId.getPath() + "/"));
+		}
+	}
+
 	private static void scheduleNextAssignment(ServerPlayer player, PlayerQuestState state) {
 		if (player == null || state == null || state.lastAssignedWorldTime() == Long.MIN_VALUE) return;
 		long dueWorldTime = nextAssignmentWorldTime(state.lastAssignedWorldTime());
@@ -725,6 +837,20 @@ final class QuestsStateManager {
 		return Math.max(0L, TimeAPIManager.getCurrentAbsoluteDayTime(server == null ? null : server.overworld()));
 	}
 
+	private static void pruneKillAttributions(long currentGameTime) {
+		while (!KILL_ATTRIBUTION_EXPIRIES.isEmpty()
+			&& KILL_ATTRIBUTION_EXPIRIES.peek().expiresAtTick() <= currentGameTime) {
+			KillAttribution expired = KILL_ATTRIBUTION_EXPIRIES.poll();
+			if (KILL_ATTRIBUTIONS.get(expired.victimId()) == expired) {
+				KILL_ATTRIBUTIONS.remove(expired.victimId());
+			}
+		}
+	}
+
+	private static long safeAdd(long value, long addition) {
+		return value >= Long.MAX_VALUE - addition ? Long.MAX_VALUE : value + addition;
+	}
+
 	private static String readString(JsonObject source, String key, String fallback) {
 		try {
 			return source != null && source.has(key) ? source.get(key).getAsString() : fallback;
@@ -742,6 +868,9 @@ final class QuestsStateManager {
 	}
 
 	private record CategoryDefinition(String id, Identifier moduleId) {
+	}
+
+	private record KillAttribution(UUID victimId, UUID playerId, long expiresAtTick) {
 	}
 
 	private static final class QuestRecord {
@@ -928,6 +1057,32 @@ final class QuestsStateManager {
 			return changed;
 		}
 
+		private boolean hasMatchingKillObjective(KillMatchContext matchContext) {
+			QuestDefinition definition = definition();
+			if (definition == null || matchContext == null) return false;
+			for (QuestObjective objective : definition.objectives()) {
+				if (objective.subcategory() == QuestSubcategory.KILL && matchContext.matches(objective.target())) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean addKilled(KillMatchContext matchContext) {
+			QuestDefinition definition = definition();
+			if (definition == null || matchContext == null) return false;
+			boolean changed = false;
+			for (int index = 0; index < definition.objectives().size(); index++) {
+				QuestObjective objective = definition.objectives().get(index);
+				if (objective.subcategory() != QuestSubcategory.KILL) continue;
+				int required = requiredCount(definition, index);
+				if (progress[index] >= required || !matchContext.matches(objective.target())) continue;
+				progress[index]++;
+				changed = true;
+			}
+			return changed;
+		}
+
 		private int displayProgress() {
 			QuestDefinition definition = definition();
 			if (definition == null || progress.length == 0) return 0;
@@ -1041,6 +1196,21 @@ final class QuestsStateManager {
 		private boolean addHarvested(Item item, int amount) {
 			boolean changed = false;
 			for (QuestRecord quest : quests) changed |= quest.addHarvested(item, amount);
+			return changed;
+		}
+
+		private boolean hasMatchingKillObjective(LivingEntity entity) {
+			KillMatchContext matchContext = new KillMatchContext(entity);
+			for (QuestRecord quest : quests) {
+				if (quest.hasMatchingKillObjective(matchContext)) return true;
+			}
+			return false;
+		}
+
+		private boolean addKilled(LivingEntity entity) {
+			KillMatchContext matchContext = new KillMatchContext(entity);
+			boolean changed = false;
+			for (QuestRecord quest : quests) changed |= quest.addKilled(matchContext);
 			return changed;
 		}
 	}

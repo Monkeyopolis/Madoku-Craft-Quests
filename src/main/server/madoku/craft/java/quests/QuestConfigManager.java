@@ -17,6 +17,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import net.minecraft.resources.Identifier;
 
 /** Loads one managed JSON quest file per quest from each quest category folder. */
 final class QuestConfigManager {
@@ -27,11 +31,14 @@ final class QuestConfigManager {
 	private static final String DESCRIPTION_KEY = "description-key";
 	private static final String CATEGORY = "category";
 	private static final String RARITY = "rarity";
+	private static final String REQUIRED_MODULES = "required-modules";
 	private static final String OBJECTIVES = "objectives";
 	private static final String OBJECTIVE_DESCRIPTION_KEY = "description-key";
 	private static final String SUBCATEGORY = "subcategory";
 	private static final String TARGET = "target";
 	private static final String TARGET_IDS = "ids";
+	// Optional namespaced variant identity; currently valid on kill objectives only.
+	private static final String TARGET_VARIANT = "variant";
 	private static final String DISPLAY_TARGET_IDS = "display-target-ids";
 	private static final String KIND = "kind";
 	private static final String REQUIRED = "required";
@@ -40,14 +47,36 @@ final class QuestConfigManager {
 
 	private static final List<CategoryFolder> CATEGORY_FOLDERS = List.of(
 		new CategoryFolder(QuestCategoryIds.CORE, "madoku-main-quests"),
+		new CategoryFolder(QuestCategoryIds.COMPAT, "madoku-compat-quests"),
 		new CategoryFolder(QuestCategoryIds.FARMING, "madoku-farming-quests"),
-		new CategoryFolder(QuestCategoryIds.MOBS, "madoku-mobs-quests"),
-		new CategoryFolder(QuestCategoryIds.PETS, "madoku-pets-quests")
+		new CategoryFolder(QuestCategoryIds.MOBS, "madoku-mobs-quests")
 	);
+	private static final Map<String, QuestDefinition> BUILT_IN_DEFINITIONS = indexBuiltInDefinitions();
+	private static final Map<String, QuestDefinition> BUILT_IN_DEFINITIONS_BY_ID = indexBuiltInDefinitionsById();
 	private static List<QuestDefinition> savedClientDefinitions = List.of();
 	private static boolean clientSynchronized;
 
 	private QuestConfigManager() {
+	}
+
+	private static Map<String, QuestDefinition> indexBuiltInDefinitions() {
+		Map<String, QuestDefinition> definitions = new LinkedHashMap<>();
+		for (QuestDefinition definition : QuestRegistry.builtInDefinitions()) {
+			definitions.put(builtInLookupKey(definition.categoryId(), definition.id()), definition);
+		}
+		return Map.copyOf(definitions);
+	}
+
+	private static String builtInLookupKey(String categoryId, String questId) {
+		return categoryId + ":" + questId;
+	}
+
+	private static Map<String, QuestDefinition> indexBuiltInDefinitionsById() {
+		Map<String, QuestDefinition> definitions = new LinkedHashMap<>();
+		for (QuestDefinition definition : BUILT_IN_DEFINITIONS.values()) {
+			definitions.put(definition.id(), definition);
+		}
+		return Map.copyOf(definitions);
 	}
 
 	static void initialize() {
@@ -170,6 +199,7 @@ final class QuestConfigManager {
 			Map.entry(FarmingQuestRegistrar.GROWING_WHEAT, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_WHEAT)),
 			Map.entry(FarmingQuestRegistrar.GROWING_SWEET_BERRIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_SWEET_BERRIES)),
 			Map.entry(FarmingQuestRegistrar.GROWING_PUMPKINS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_PUMPKINS)),
+			Map.entry(FarmingQuestRegistrar.GROWING_MELONS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_MELONS)),
 			Map.entry(FarmingQuestRegistrar.PUMPKIN_PIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.PUMPKIN_PIES)),
 			Map.entry(FarmingQuestRegistrar.GROWING_BEETROOT, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_BEETROOT)),
 			Map.entry(FarmingQuestRegistrar.BOUNTIFUL_HARVESTS, buildDefaultFile(categoryId, FarmingQuestRegistrar.BOUNTIFUL_HARVESTS)),
@@ -177,19 +207,42 @@ final class QuestConfigManager {
 			Map.entry(FarmingQuestRegistrar.GOLDEN_CARROTS, buildDefaultFile(categoryId, FarmingQuestRegistrar.GOLDEN_CARROTS)),
 			Map.entry(FarmingQuestRegistrar.ARE_THOSE_STEMS, buildDefaultFile(categoryId, FarmingQuestRegistrar.ARE_THOSE_STEMS)),
 			Map.entry(FarmingQuestRegistrar.THESE_ARE_CROPS, buildDefaultFile(categoryId, FarmingQuestRegistrar.THESE_ARE_CROPS)),
-			Map.entry(FarmingQuestRegistrar.COOKING_BEETROOT_SOUP, buildDefaultFile(categoryId, FarmingQuestRegistrar.COOKING_BEETROOT_SOUP)),
 			Map.entry(FarmingQuestRegistrar.MAKING_BREAD, buildDefaultFile(categoryId, FarmingQuestRegistrar.MAKING_BREAD)),
-			Map.entry(FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES)),
-			Map.entry(FarmingQuestRegistrar.BAKING_POTATOES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_POTATOES))
+			Map.entry(FarmingQuestRegistrar.BAKING_COOKIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_COOKIES)),
+			Map.entry(FarmingQuestRegistrar.BAKING_POTATOES, buildDefaultFile(categoryId, FarmingQuestRegistrar.BAKING_POTATOES)),
+			Map.entry(FarmingQuestRegistrar.GROW_FASTER, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROW_FASTER)),
+			Map.entry(FarmingQuestRegistrar.GROWING_SUGAR_CANE, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_SUGAR_CANE)),
+			Map.entry(FarmingQuestRegistrar.GROWING_GLOW_BERRIES, buildDefaultFile(categoryId, FarmingQuestRegistrar.GROWING_GLOW_BERRIES))
+		);
+		if (QuestCategoryIds.COMPAT.equals(categoryId)) return Map.ofEntries(
+			Map.entry(FarmingQuestRegistrar.CUTTING_MELONS, buildDefaultFile(categoryId, FarmingQuestRegistrar.CUTTING_MELONS)),
+			Map.entry(CompatQuestRegistrar.MAKING_GLOWING_PIES, buildDefaultFile(categoryId, CompatQuestRegistrar.MAKING_GLOWING_PIES)),
+			Map.entry(CompatQuestRegistrar.COOKING_BEETROOT_SOUP, buildDefaultFile(categoryId, CompatQuestRegistrar.COOKING_BEETROOT_SOUP)),
+			Map.entry(CompatQuestRegistrar.BAKING_SWEET_BERRY_COOKIES, buildDefaultFile(categoryId, CompatQuestRegistrar.BAKING_SWEET_BERRY_COOKIES)),
+			Map.entry(CompatQuestRegistrar.FISHING_FOR_COOKED_TROPICAL_FISH, buildDefaultFile(categoryId, CompatQuestRegistrar.FISHING_FOR_COOKED_TROPICAL_FISH))
+		);
+		if (QuestCategoryIds.MOBS.equals(categoryId)) return Map.ofEntries(
+			Map.entry(MobsQuestRegistrar.KILLING_SKELETONS, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_SKELETONS)),
+			Map.entry(MobsQuestRegistrar.KILLING_STRAYS, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_STRAYS)),
+			Map.entry(MobsQuestRegistrar.TYPES_OF_SKELETONS, buildDefaultFile(categoryId, MobsQuestRegistrar.TYPES_OF_SKELETONS)),
+			Map.entry(MobsQuestRegistrar.KILLING_ZOMBIES, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_ZOMBIES)),
+			Map.entry(MobsQuestRegistrar.KILLING_CREEPERS, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_CREEPERS)),
+			Map.entry(MobsQuestRegistrar.KILLING_SPIDERS, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_SPIDERS)),
+			Map.entry(MobsQuestRegistrar.KILLING_ENDERMEN, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_ENDERMEN)),
+			Map.entry(MobsQuestRegistrar.KILLING_DROWNED, buildDefaultFile(categoryId, MobsQuestRegistrar.KILLING_DROWNED)),
+			Map.entry(MobsQuestRegistrar.THATS_A_STRAY, buildDefaultFile(categoryId, MobsQuestRegistrar.THATS_A_STRAY)),
+			Map.entry(MobsQuestRegistrar.STRANGE_SKELETON, buildDefaultFile(categoryId, MobsQuestRegistrar.STRANGE_SKELETON)),
+			Map.entry(MobsQuestRegistrar.THATS_A_ZOMBIE, buildDefaultFile(categoryId, MobsQuestRegistrar.THATS_A_ZOMBIE)),
+			Map.entry(MobsQuestRegistrar.CREEPER_ON_FIRE, buildDefaultFile(categoryId, MobsQuestRegistrar.CREEPER_ON_FIRE)),
+			Map.entry(MobsQuestRegistrar.SPIDER_FAMILY, buildDefaultFile(categoryId, MobsQuestRegistrar.SPIDER_FAMILY)),
+			Map.entry(MobsQuestRegistrar.STRANGE_ENDERMAN, buildDefaultFile(categoryId, MobsQuestRegistrar.STRANGE_ENDERMAN)),
+			Map.entry(MobsQuestRegistrar.ELITE_MOB_KILLER, buildDefaultFile(categoryId, MobsQuestRegistrar.ELITE_MOB_KILLER))
 		);
 		return Map.of();
 	}
 
 	private static JsonObject buildDefaultFile(String categoryId, String fileKey) {
-		QuestDefinition builtIn = QuestRegistry.builtInDefinitions().stream()
-			.filter(definition -> definition.categoryId().equals(categoryId) && definition.id().equals(normalizeId(fileKey)))
-			.findFirst()
-			.orElse(null);
+		QuestDefinition builtIn = BUILT_IN_DEFINITIONS.get(builtInLookupKey(categoryId, normalizeId(fileKey)));
 		if (builtIn != null) return toJson(builtIn);
 
 		String normalizedId = normalizeId(fileKey);
@@ -199,7 +252,8 @@ final class QuestConfigManager {
 			"menu.madoku-craft.quests." + normalizedId + ".description",
 			categoryId,
 			QuestRarity.COMMON.id(),
-			List.of(QuestObjective.collects(QuestTarget.id("minecraft:air"), 1))
+			List.of(QuestObjective.collects(QuestTarget.id("minecraft:air"), 1)),
+			Set.of()
 		);
 	}
 
@@ -210,7 +264,8 @@ final class QuestConfigManager {
 			definition.descriptionKey(),
 			definition.categoryId(),
 			definition.rarity().id(),
-			definition.objectives()
+			definition.objectives(),
+			definition.requiredModules()
 		);
 	}
 
@@ -220,7 +275,8 @@ final class QuestConfigManager {
 		String descriptionKey,
 		String categoryId,
 		String rarity,
-		List<?> objectives
+		List<?> objectives,
+		Set<Identifier> requiredModules
 	) {
 		JsonObject root = new JsonObject();
 		JsonObject quest = new JsonObject();
@@ -229,6 +285,9 @@ final class QuestConfigManager {
 		quest.addProperty(DESCRIPTION_KEY, descriptionKey);
 		quest.addProperty(CATEGORY, categoryId);
 		quest.addProperty(RARITY, rarity);
+		JsonArray requiredModuleArray = new JsonArray();
+		for (Identifier moduleId : requiredModules) requiredModuleArray.add(moduleId.toString());
+		quest.add(REQUIRED_MODULES, requiredModuleArray);
 		JsonArray objectiveArray = new JsonArray();
 		for (Object value : objectives) {
 			JsonObject objective = new JsonObject();
@@ -263,6 +322,7 @@ final class QuestConfigManager {
 		} else {
 			json.addProperty(ID, target.id());
 		}
+		if (!target.variantId().isBlank()) json.addProperty(TARGET_VARIANT, target.variantId());
 		return json;
 	}
 
@@ -275,6 +335,11 @@ final class QuestConfigManager {
 		QuestRarity rarity = QuestRarity.fromId(readString(quest, RARITY, QuestRarity.COMMON.id()));
 		if (id.isBlank() || titleKey.isBlank() || descriptionKey.isBlank() || !categoryId.equals(configuredCategory)) {
 			LOGGER.warn("Skipping invalid quest file '{}' in '{}'.", fileKey, categoryId);
+			return null;
+		}
+		QuestDefinition builtIn = BUILT_IN_DEFINITIONS_BY_ID.get(id);
+		if (builtIn != null && !builtIn.categoryId().equals(categoryId)) {
+			LOGGER.warn("Skipping quest '{}' because it belongs to category '{}', not '{}'.", id, builtIn.categoryId(), categoryId);
 			return null;
 		}
 		if (rarity == null) {
@@ -296,8 +361,18 @@ final class QuestConfigManager {
 			}
 			objectives.add(objective);
 		}
+		Set<Identifier> requiredModules = new LinkedHashSet<>();
+		for (String moduleId : readStrings(quest, REQUIRED_MODULES)) {
+			Identifier parsedModuleId = Identifier.tryParse(moduleId);
+			if (parsedModuleId == null) {
+				LOGGER.warn("Skipping quest '{}' because required module ID '{}' is invalid.", id, moduleId);
+				return null;
+			}
+			requiredModules.add(parsedModuleId);
+		}
+		if (builtIn != null) requiredModules.addAll(builtIn.requiredModules());
 		try {
-			return new QuestDefinition(id, titleKey, descriptionKey, categoryId, rarity, objectives);
+			return new QuestDefinition(id, titleKey, descriptionKey, categoryId, rarity, objectives, requiredModules);
 		} catch (IllegalArgumentException exception) {
 			LOGGER.warn("Skipping invalid quest definition '{}'.", id, exception);
 			return null;
@@ -312,15 +387,17 @@ final class QuestConfigManager {
 		JsonObject target = objectField(source, TARGET);
 		QuestTarget.Kind kind = QuestTarget.Kind.fromId(readString(target, KIND, ""));
 		String targetId = readString(target, ID, "");
+		String variantId = readString(target, TARGET_VARIANT, "");
 		List<String> targetIds = readStrings(target, TARGET_IDS);
 		List<String> displayTargetIds = readStrings(source, DISPLAY_TARGET_IDS);
 		int required = readInt(source, REQUIRED, 0);
-		if (subcategory == null || kind == null || (kind != QuestTarget.Kind.ANY_OF && targetId.isBlank())
+		if (subcategory == null || kind == null || (!variantId.isBlank() && subcategory != QuestSubcategory.KILL)
+			|| (kind != QuestTarget.Kind.ANY_OF && targetId.isBlank())
 			|| (kind == QuestTarget.Kind.ANY_OF && targetIds.isEmpty()) || required < 1) return null;
 		try {
 			QuestTarget questTarget = kind == QuestTarget.Kind.ANY_OF
-				? QuestTarget.anyOf(targetIds)
-				: new QuestTarget(kind, targetId);
+				? new QuestTarget(kind, null, targetIds, variantId)
+				: new QuestTarget(kind, targetId, List.of(targetId), variantId);
 			return new QuestObjective(subcategory, questTarget, required, descriptionKey, displayTargetIds);
 		} catch (IllegalArgumentException exception) {
 			return null;

@@ -24,6 +24,9 @@ public record QuestObjective(
 		if (subcategory == null) throw new IllegalArgumentException("Quest objective subcategory must not be null.");
 		if (target == null) throw new IllegalArgumentException("Quest objective target must not be null.");
 		if (requiredCount < 1) throw new IllegalArgumentException("Quest objective required count must be positive.");
+		if (!target.variantId().isBlank() && subcategory != QuestSubcategory.KILL) {
+			throw new IllegalArgumentException("Variant-specific targets are only supported for kill objectives.");
+		}
 		descriptionKey = descriptionKey == null ? "" : descriptionKey.trim();
 		List<String> normalizedDisplayTargetIds = new ArrayList<>();
 		if (displayTargetIds != null) {
@@ -73,6 +76,14 @@ public record QuestObjective(
 
 	public static QuestObjective harvests(QuestTarget target, int requiredCount, String descriptionKey) {
 		return new QuestObjective(QuestSubcategory.HARVEST, target, requiredCount, descriptionKey);
+	}
+
+	public static QuestObjective kills(QuestTarget target, int requiredCount) {
+		return new QuestObjective(QuestSubcategory.KILL, target, requiredCount);
+	}
+
+	public static QuestObjective kills(QuestTarget target, int requiredCount, String descriptionKey) {
+		return new QuestObjective(QuestSubcategory.KILL, target, requiredCount, descriptionKey);
 	}
 
 	public static QuestObjective smelts(QuestTarget target, int requiredCount) {

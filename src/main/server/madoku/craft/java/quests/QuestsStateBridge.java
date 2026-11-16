@@ -3,6 +3,8 @@ package madoku.craft.java.quests;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.Item;
 
@@ -43,6 +45,10 @@ public final class QuestsStateBridge {
 
 	public static void onItemUsed(ServerPlayer player, Item item, int amount) {
 		QuestsStateManager.onItemUsed(player, item, amount);
+	}
+
+	public static void onEntityDamaged(LivingEntity entity, DamageSource damageSource) {
+		QuestsStateManager.onEntityDamaged(entity, damageSource);
 	}
 
 	public static void onBlockStripped(ServerPlayer player, ServerLevel level, BlockPos pos, BlockState state) {

@@ -40,7 +40,7 @@ public final class MadokuQuestsClient {
 		new CategoryDefinition(QuestRegistry.CORE_CATEGORY, "menu.madoku-craft.quests.category.core", MadokuModuleIds.CORE, "core-quests.png"),
 		new CategoryDefinition(QuestRegistry.FARMING_CATEGORY, "menu.madoku-craft.quests.category.farming", MadokuModuleIds.FARMING, "farming-quests.png"),
 		new CategoryDefinition(QuestRegistry.MOBS_CATEGORY, "menu.madoku-craft.quests.category.mobs", MadokuModuleIds.MOBS, "mobs-quests.png"),
-		new CategoryDefinition(QuestRegistry.PETS_CATEGORY, "menu.madoku-craft.quests.category.pets", MadokuModuleIds.PETS, "pets-quests.png")
+		new CategoryDefinition(QuestRegistry.COMPAT_CATEGORY, "menu.madoku-craft.quests.category.compat", MadokuModuleIds.COMPAT, "compat-quests.png")
 	);
 	private static boolean initialized;
 	private static QuestSelection selectedQuest;

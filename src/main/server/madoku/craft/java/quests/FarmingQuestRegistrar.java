@@ -8,6 +8,8 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 	public static final String GROWING_WHEAT = "growing-wheat";
 	public static final String GROWING_SWEET_BERRIES = "growing-sweet-berries";
 	public static final String GROWING_PUMPKINS = "growing-pumpkins";
+	public static final String GROWING_MELONS = "growing-melons";
+	public static final String CUTTING_MELONS = "cutting-melons";
 	public static final String PUMPKIN_PIES = "pumpkin-pies";
 	public static final String GROWING_BEETROOT = "growing-beetroot";
 	public static final String BOUNTIFUL_HARVESTS = "bountiful-harvests";
@@ -15,10 +17,12 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 	public static final String GOLDEN_CARROTS = "golden-carrots";
 	public static final String ARE_THOSE_STEMS = "are-those-stems";
 	public static final String THESE_ARE_CROPS = "these-are-crops";
-	public static final String COOKING_BEETROOT_SOUP = "cooking-beetroot-soup";
 	public static final String MAKING_BREAD = "making-bread";
-	public static final String BAKING_SWEET_BERRY_COOKIES = "baking-sweet-berry-cookies";
+	public static final String BAKING_COOKIES = "baking-cookies";
 	public static final String BAKING_POTATOES = "baking-potatoes";
+	public static final String GROW_FASTER = "grow-faster";
+	public static final String GROWING_SUGAR_CANE = "growing-sugar-cane";
+	public static final String GROWING_GLOW_BERRIES = "growing-glow-berries";
 
 	@Override
 	public String categoryId() {
@@ -156,6 +160,20 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 				)
 			),
 			new QuestDefinition(
+				GROWING_MELONS,
+				"menu.madoku-craft.quests.growing-melons",
+				"menu.madoku-craft.quests.growing-melons.description",
+				QuestCategoryIds.FARMING,
+				QuestRarity.COMMON,
+				List.of(
+					QuestObjective.harvests(
+						QuestTarget.id("minecraft:melon"),
+						24,
+						"menu.madoku-craft.quests.growing-melons.objective.harvest"
+					)
+				)
+			),
+			new QuestDefinition(
 				BOUNTIFUL_HARVESTS,
 				"menu.madoku-craft.quests.bountiful-harvests",
 				"menu.madoku-craft.quests.bountiful-harvests.description",
@@ -218,25 +236,6 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 				)
 			),
 			new QuestDefinition(
-				COOKING_BEETROOT_SOUP,
-				"menu.madoku-craft.quests.cooking-beetroot-soup",
-				"menu.madoku-craft.quests.cooking-beetroot-soup.description",
-				QuestCategoryIds.FARMING,
-				QuestRarity.LEGENDARY,
-				List.of(
-					QuestObjective.harvests(
-						QuestTarget.id("minecraft:beetroot"),
-						16,
-						"menu.madoku-craft.quests.cooking-beetroot-soup.objective.harvest"
-					),
-					QuestObjective.crafts(
-						QuestTarget.id("minecraft:beetroot_soup"),
-						16,
-						"menu.madoku-craft.quests.cooking-beetroot-soup.objective.crafting"
-					)
-				)
-			),
-			new QuestDefinition(
 				MAKING_BREAD,
 				"menu.madoku-craft.quests.making-bread",
 				"menu.madoku-craft.quests.making-bread.description",
@@ -256,26 +255,26 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 				)
 			),
 			new QuestDefinition(
-				BAKING_SWEET_BERRY_COOKIES,
-				"menu.madoku-craft.quests.baking-sweet-berry-cookies",
-				"menu.madoku-craft.quests.baking-sweet-berry-cookies.description",
+				BAKING_COOKIES,
+				"menu.madoku-craft.quests.baking-cookies",
+				"menu.madoku-craft.quests.baking-cookies.description",
 				QuestCategoryIds.FARMING,
 				QuestRarity.LEGENDARY,
 				List.of(
 					QuestObjective.harvests(
 						QuestTarget.id("minecraft:wheat"),
 						16,
-						"menu.madoku-craft.quests.baking-sweet-berry-cookies.objective.harvest-wheat"
+						"menu.madoku-craft.quests.baking-cookies.objective.harvest-wheat"
 					),
-					QuestObjective.harvests(
-						QuestTarget.id("minecraft:sweet_berries"),
-						16,
-						"menu.madoku-craft.quests.baking-sweet-berry-cookies.objective.harvest-sweet-berries"
+					QuestObjective.collects(
+						QuestTarget.id("minecraft:cocoa_beans"),
+						32,
+						"menu.madoku-craft.quests.baking-cookies.objective.collect-cocoa-beans"
 					),
 					QuestObjective.crafts(
-						QuestTarget.id("madoku-craft:sweet-berry-cookie"),
-						16,
-						"menu.madoku-craft.quests.baking-sweet-berry-cookies.objective.crafting"
+						QuestTarget.id("minecraft:cookie"),
+						24,
+						"menu.madoku-craft.quests.baking-cookies.objective.crafting"
 					)
 				)
 			),
@@ -295,6 +294,48 @@ public final class FarmingQuestRegistrar implements QuestCategoryRegistrar {
 						QuestTarget.id("minecraft:baked_potato"),
 						24,
 						"menu.madoku-craft.quests.baking-potatoes.objective.smelt"
+					)
+				)
+			),
+			new QuestDefinition(
+				GROW_FASTER,
+				"menu.madoku-craft.quests.grow-faster",
+				"menu.madoku-craft.quests.grow-faster.description",
+				QuestCategoryIds.FARMING,
+				QuestRarity.COMMON,
+				List.of(
+					QuestObjective.uses(
+						QuestTarget.id("minecraft:bone_meal"),
+						32,
+						"menu.madoku-craft.quests.grow-faster.objective.use"
+					)
+				)
+			),
+			new QuestDefinition(
+				GROWING_SUGAR_CANE,
+				"menu.madoku-craft.quests.growing-sugar-cane",
+				"menu.madoku-craft.quests.growing-sugar-cane.description",
+				QuestCategoryIds.FARMING,
+				QuestRarity.COMMON,
+				List.of(
+					QuestObjective.collects(
+						QuestTarget.id("minecraft:sugar_cane"),
+						48,
+						"menu.madoku-craft.quests.growing-sugar-cane.objective.collect"
+					)
+				)
+			),
+			new QuestDefinition(
+				GROWING_GLOW_BERRIES,
+				"menu.madoku-craft.quests.growing-glow-berries",
+				"menu.madoku-craft.quests.growing-glow-berries.description",
+				QuestCategoryIds.FARMING,
+				QuestRarity.COMMON,
+				List.of(
+					QuestObjective.collects(
+						QuestTarget.id("minecraft:glow_berries"),
+						32,
+						"menu.madoku-craft.quests.growing-glow-berries.objective.collect"
 					)
 				)
 			)

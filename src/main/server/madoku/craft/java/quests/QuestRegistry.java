@@ -1,5 +1,7 @@
 package madoku.craft.java.quests;
 
+import madoku.craft.java.core.module.MadokuModuleLifecycleManager;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -8,12 +10,14 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import net.minecraft.resources.Identifier;
+
 /** Central registry for standard quest definitions and weighted assignment. */
 public final class QuestRegistry {
 	public static final String CORE_CATEGORY = QuestCategoryIds.CORE;
+	public static final String COMPAT_CATEGORY = QuestCategoryIds.COMPAT;
 	public static final String FARMING_CATEGORY = QuestCategoryIds.FARMING;
 	public static final String MOBS_CATEGORY = QuestCategoryIds.MOBS;
-	public static final String PETS_CATEGORY = QuestCategoryIds.PETS;
 	public static final String LUMBERJACK = CoreQuestRegistrar.LUMBERJACK;
 	public static final String STONEWORKS = CoreQuestRegistrar.STONEWORKS;
 	public static final String DIRT_COLLECTOR = CoreQuestRegistrar.DIRT_COLLECTOR;
@@ -39,24 +43,44 @@ public final class QuestRegistry {
 	public static final String GROWING_WHEAT = FarmingQuestRegistrar.GROWING_WHEAT;
 	public static final String GROWING_SWEET_BERRIES = FarmingQuestRegistrar.GROWING_SWEET_BERRIES;
 	public static final String GROWING_PUMPKINS = FarmingQuestRegistrar.GROWING_PUMPKINS;
+	public static final String GROWING_MELONS = FarmingQuestRegistrar.GROWING_MELONS;
+	public static final String CUTTING_MELONS = FarmingQuestRegistrar.CUTTING_MELONS;
 	public static final String PUMPKIN_PIES = FarmingQuestRegistrar.PUMPKIN_PIES;
+	public static final String MAKING_GLOWING_PIES = CompatQuestRegistrar.MAKING_GLOWING_PIES;
 	public static final String GROWING_BEETROOT = FarmingQuestRegistrar.GROWING_BEETROOT;
 	public static final String BOUNTIFUL_HARVESTS = FarmingQuestRegistrar.BOUNTIFUL_HARVESTS;
 	public static final String GROWING_CARROTS = FarmingQuestRegistrar.GROWING_CARROTS;
 	public static final String GOLDEN_CARROTS = FarmingQuestRegistrar.GOLDEN_CARROTS;
 	public static final String ARE_THOSE_STEMS = FarmingQuestRegistrar.ARE_THOSE_STEMS;
 	public static final String THESE_ARE_CROPS = FarmingQuestRegistrar.THESE_ARE_CROPS;
-	public static final String COOKING_BEETROOT_SOUP = FarmingQuestRegistrar.COOKING_BEETROOT_SOUP;
+	public static final String COOKING_BEETROOT_SOUP = CompatQuestRegistrar.COOKING_BEETROOT_SOUP;
 	public static final String MAKING_BREAD = FarmingQuestRegistrar.MAKING_BREAD;
-	public static final String BAKING_SWEET_BERRY_COOKIES = FarmingQuestRegistrar.BAKING_SWEET_BERRY_COOKIES;
+	public static final String BAKING_SWEET_BERRY_COOKIES = CompatQuestRegistrar.BAKING_SWEET_BERRY_COOKIES;
+	public static final String FISHING_FOR_COOKED_TROPICAL_FISH = CompatQuestRegistrar.FISHING_FOR_COOKED_TROPICAL_FISH;
+	public static final String BAKING_COOKIES = FarmingQuestRegistrar.BAKING_COOKIES;
 	public static final String BAKING_POTATOES = FarmingQuestRegistrar.BAKING_POTATOES;
+	public static final String KILLING_SKELETONS = MobsQuestRegistrar.KILLING_SKELETONS;
+	public static final String KILLING_STRAYS = MobsQuestRegistrar.KILLING_STRAYS;
+	public static final String TYPES_OF_SKELETONS = MobsQuestRegistrar.TYPES_OF_SKELETONS;
+	public static final String KILLING_ZOMBIES = MobsQuestRegistrar.KILLING_ZOMBIES;
+	public static final String KILLING_CREEPERS = MobsQuestRegistrar.KILLING_CREEPERS;
+	public static final String KILLING_SPIDERS = MobsQuestRegistrar.KILLING_SPIDERS;
+	public static final String KILLING_ENDERMEN = MobsQuestRegistrar.KILLING_ENDERMEN;
+	public static final String KILLING_DROWNED = MobsQuestRegistrar.KILLING_DROWNED;
+	public static final String THATS_A_STRAY = MobsQuestRegistrar.THATS_A_STRAY;
+	public static final String STRANGE_SKELETON = MobsQuestRegistrar.STRANGE_SKELETON;
+	public static final String THATS_A_ZOMBIE = MobsQuestRegistrar.THATS_A_ZOMBIE;
+	public static final String CREEPER_ON_FIRE = MobsQuestRegistrar.CREEPER_ON_FIRE;
+	public static final String SPIDER_FAMILY = MobsQuestRegistrar.SPIDER_FAMILY;
+	public static final String STRANGE_ENDERMAN = MobsQuestRegistrar.STRANGE_ENDERMAN;
+	public static final String ELITE_MOB_KILLER = MobsQuestRegistrar.ELITE_MOB_KILLER;
 
 	private static final Map<String, QuestDefinition> DEFINITIONS = new LinkedHashMap<>();
 	private static final List<QuestCategoryRegistrar> BUILT_IN_REGISTRARS = List.of(
 		new CoreQuestRegistrar(),
 		new FarmingQuestRegistrar(),
 		new MobsQuestRegistrar(),
-		new PetsQuestRegistrar()
+		new CompatQuestRegistrar()
 	);
 
 	static {
@@ -125,11 +149,13 @@ public final class QuestRegistry {
 		QuestDefinition lumberjack = get(LUMBERJACK);
 		if (lumberjack != null
 			&& CORE_CATEGORY.equals(lumberjack.categoryId())
-			&& lumberjack.rarity() == QuestRarity.COMMON) {
+			&& lumberjack.rarity() == QuestRarity.COMMON
+			&& modulesAvailable(lumberjack)) {
 			return lumberjack;
 		}
 		return forCategory(CORE_CATEGORY).stream()
 			.filter(definition -> definition.rarity() == QuestRarity.COMMON)
+			.filter(QuestRegistry::modulesAvailable)
 			.findFirst()
 			.orElse(null);
 	}
@@ -148,11 +174,14 @@ public final class QuestRegistry {
 	}
 
 	public static boolean hasAvailable(String categoryId, Set<String> excludedIds) {
-		return forCategory(categoryId).stream().anyMatch(definition -> excludedIds == null || !excludedIds.contains(definition.id()));
+		return forCategory(categoryId).stream()
+			.filter(QuestRegistry::modulesAvailable)
+			.anyMatch(definition -> excludedIds == null || !excludedIds.contains(definition.id()));
 	}
 
 	public static QuestAssignment choose(Random random, String categoryId, Set<String> excludedIds) {
 		List<QuestDefinition> definitions = forCategory(categoryId).stream()
+			.filter(QuestRegistry::modulesAvailable)
 			.filter(definition -> excludedIds == null || !excludedIds.contains(definition.id()))
 			.toList();
 		if (definitions.isEmpty()) return null;
@@ -173,6 +202,14 @@ public final class QuestRegistry {
 			matchingDefinitions.get(random.nextInt(matchingDefinitions.size())),
 			selectedDifficulty
 		);
+	}
+
+	private static boolean modulesAvailable(QuestDefinition definition) {
+		MadokuModuleLifecycleManager lifecycle = MadokuModuleLifecycleManager.server();
+		for (Identifier moduleId : definition.requiredModules()) {
+			if (!lifecycle.isRunning(moduleId)) return false;
+		}
+		return true;
 	}
 
 	private static QuestRarity chooseRarity(Random random, List<QuestRarity> availableRarities) {
